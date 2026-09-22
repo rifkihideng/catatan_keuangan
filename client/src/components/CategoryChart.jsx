@@ -27,10 +27,10 @@ export default function CategoryChart({ transactions }) {
   return (
     <div className="card p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 font-bold text-slate-900">
+        <h2 className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
           <PieChartIcon className="h-4 w-4 text-indigo-600" /> Rincian per Kategori
         </h2>
-        <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-200 p-1 dark:bg-slate-700">
           <button
             type="button"
             onClick={() => setType('expense')}
@@ -71,17 +71,19 @@ export default function CategoryChart({ transactions }) {
                   outerRadius={80}
                   paddingAngle={2}
                   strokeWidth={0}
+                  animationDuration={600}
+                  animationEasing="ease-out"
                 >
                   {data.map((_, i) => (
                     <Cell key={i} fill={COLORS[i % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip content={<ChartTooltip />} />
+                <Tooltip content={<ChartTooltip />} animationDuration={150} />
               </PieChart>
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Total</p>
-              <p className="text-lg font-bold text-slate-800">{formatRupiah(total)}</p>
+              <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{formatRupiah(total)}</p>
             </div>
           </div>
 
@@ -95,16 +97,16 @@ export default function CategoryChart({ transactions }) {
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
                     style={{ backgroundColor: color }}
                   />
-                  <span className="w-24 shrink-0 truncate text-slate-600" title={d.name}>
+                  <span className="w-24 shrink-0 truncate text-slate-600 dark:text-slate-300" title={d.name}>
                     {d.name}
                   </span>
-                  <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{ width: `${pct}%`, backgroundColor: color }}
                     />
                   </div>
-                  <span className="w-24 shrink-0 text-right font-semibold text-slate-700">
+                  <span className="w-24 shrink-0 text-right font-semibold text-slate-700 dark:text-slate-200">
                     {formatRupiah(d.value)}
                   </span>
                   <span className="w-9 shrink-0 text-right text-xs font-medium text-slate-400">

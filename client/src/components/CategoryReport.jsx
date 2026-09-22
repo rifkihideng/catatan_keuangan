@@ -43,16 +43,18 @@ export default function CategoryReport({ data = [] }) {
           type="month"
           value={fromMonth}
           onChange={(e) => setFromMonth(e.target.value)}
-          className="w-36 rounded-xl border border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+          className="input w-36"
           title="Dari bulan"
+          aria-label="Dari bulan"
         />
         <span className="text-xs text-slate-400">–</span>
         <input
           type="month"
           value={toMonth}
           onChange={(e) => setToMonth(e.target.value)}
-          className="w-36 rounded-xl border border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+          className="input w-36"
           title="Sampai bulan"
+          aria-label="Sampai bulan"
         />
         {(fromMonth || toMonth) && (
           <button
@@ -61,8 +63,9 @@ export default function CategoryReport({ data = [] }) {
               setFromMonth('');
               setToMonth('');
             }}
-            className="rounded-xl border border-slate-300 px-2 py-1.5 text-sm text-slate-500 transition-colors hover:bg-slate-50"
+            className="rounded-xl border border-slate-300 px-2 py-1.5 text-sm text-slate-500 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
             title="Reset periode"
+            aria-label="Reset periode"
           >
             <X className="h-4 w-4" />
           </button>
@@ -134,7 +137,7 @@ export default function CategoryReport({ data = [] }) {
             ))}
           </tbody>
           <tfoot>
-            <tr className="bg-slate-50 dark:bg-slate-700/40">
+            <tr className="bg-slate-200 dark:bg-slate-700/40">
               <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-800 dark:text-slate-100">
                 Total
               </td>

@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { deleteCategory, getCategoryDetails, updateCategory } from '../api';
+import { useModalA11y } from '../useModalA11y';
 import ConfirmDialog from './ConfirmDialog';
 
 export default function CategoryManager({ open, onClose, onChanged }) {
+  const titleId = useId();
+  const panelRef = useModalA11y(open, onClose);
   const [cats, setCats] = useState({ income: [], expense: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -101,6 +104,7 @@ export default function CategoryManager({ open, onClose, onChanged }) {
                     disabled={busy}
                     className="shrink-0 rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
                     title="Simpan"
+                    aria-label={`Simpan nama kategori ${editName || cat.name}`}
                   >
                     <Check className="h-4 w-4" />
                   </button>
@@ -109,6 +113,7 @@ export default function CategoryManager({ open, onClose, onChanged }) {
                     onClick={() => setEditingId(null)}
                     className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
                     title="Batal"
+                    aria-label="Batal ganti nama"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -124,6 +129,7 @@ export default function CategoryManager({ open, onClose, onChanged }) {
                       onClick={() => startEdit(cat)}
                       className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-50"
                       title="Ganti nama"
+                      aria-label={`Ganti nama kategori ${cat.name}`}
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
@@ -133,6 +139,7 @@ export default function CategoryManager({ open, onClose, onChanged }) {
                       disabled={busy}
                       className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
                       title="Hapus"
+                      aria-label={`Hapus kategori ${cat.name}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -148,15 +155,25 @@ export default function CategoryManager({ open, onClose, onChanged }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 print:hidden">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-      <div className="relative flex max-h-[80vh] w-full max-w-md flex-col rounded-xl bg-white shadow-xl dark:bg-slate-800">
+      <div className="absolute inset-0 animate-fade-in bg-slate-900/40" onClick={onClose} />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="relative flex max-h-[80vh] w-full max-w-md animate-dialog-in flex-col rounded-xl bg-white shadow-xl outline-none dark:bg-slate-800"
+      >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-700">
-          <h3 className="font-semibold text-slate-800 dark:text-slate-100">Kelola Kategori</h3>
+          <h3 id={titleId} className="font-semibold text-slate-800 dark:text-slate-100">
+            Kelola Kategori
+          </h3>
           <button
             type="button"
             onClick={onClose}
             className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700"
             title="Tutup"
+            aria-label="Tutup kelola kategori"
           >
             <X className="h-5 w-5" />
           </button>

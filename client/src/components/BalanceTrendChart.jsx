@@ -19,7 +19,7 @@ export default function BalanceTrendChart({ data }) {
 
   return (
     <div className="card p-5">
-      <h2 className="mb-4 flex items-center gap-2 font-bold text-slate-900">
+      <h2 className="mb-4 flex items-center gap-2 font-bold text-slate-900 dark:text-white">
         <TrendingUp className="h-4 w-4 text-indigo-600" /> Tren Saldo
       </h2>
       {chartData.length === 0 ? (
@@ -36,7 +36,7 @@ export default function BalanceTrendChart({ data }) {
                   <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
               <XAxis
                 dataKey="name"
                 minTickGap={28}
@@ -51,7 +51,7 @@ export default function BalanceTrendChart({ data }) {
                 tick={{ fill: '#94a3b8', fontSize: 12 }}
                 width={48}
               />
-              <Tooltip content={<ChartTooltip />} />
+              <Tooltip content={<ChartTooltip />} animationDuration={150} />
               <ReferenceLine y={0} stroke="#cbd5e1" strokeDasharray="4 4" />
               <Area
                 type="monotone"
@@ -61,6 +61,8 @@ export default function BalanceTrendChart({ data }) {
                 fill="url(#saldoGrad)"
                 dot={{ r: 3, fill: '#6366f1', strokeWidth: 0 }}
                 activeDot={{ r: 5, fill: '#6366f1', strokeWidth: 2, stroke: '#fff' }}
+                animationDuration={600}
+                animationEasing="ease-out"
               />
             </AreaChart>
           </ResponsiveContainer>

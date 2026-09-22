@@ -35,7 +35,7 @@ export default function SavingsGoalCard({ balance, goal, onSave }) {
   return (
     <div className="card p-5">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 font-bold text-slate-900">
+        <h2 className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
           <Target className="h-4 w-4 text-indigo-600" /> Target Tabungan
         </h2>
         <button
@@ -68,7 +68,7 @@ export default function SavingsGoalCard({ balance, goal, onSave }) {
             <span className="font-semibold text-slate-800">{formatRupiah(current)}</span> dari target{' '}
             {formatRupiah(target)}
           </p>
-          <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+          <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
             <div
               className={`h-full rounded-full transition-all ${
                 reached ? 'bg-emerald-500' : 'bg-indigo-500'

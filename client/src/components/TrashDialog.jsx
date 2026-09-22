@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   ArrowDown,
   ArrowLeftRight,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { deleteTrashItem, emptyTrash, getTrash, restoreTrashItem } from '../api';
 import { formatRupiah } from '../format';
+import { useModalA11y } from '../useModalA11y';
 import ConfirmDialog from './ConfirmDialog';
 
 const ENTITY_LABEL = {
@@ -81,6 +82,8 @@ function formatDate(d) {
 }
 
 export default function TrashDialog({ open, onClose, onChanged }) {
+  const titleId = useId();
+  const panelRef = useModalA11y(open, onClose);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -150,14 +153,23 @@ export default function TrashDialog({ open, onClose, onChanged }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 print:hidden">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-      <div className="relative flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl bg-white shadow-xl dark:bg-slate-800">
+      <div className="absolute inset-0 animate-fade-in bg-slate-900/40" onClick={onClose} />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="relative flex max-h-[85vh] w-full max-w-lg animate-dialog-in flex-col rounded-xl bg-white shadow-xl outline-none dark:bg-slate-800"
+      >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-700">
           <div className="flex items-center gap-2">
             <History className="h-5 w-5 text-indigo-600" />
-            <h3 className="font-semibold text-slate-800 dark:text-slate-100">Recycle Bin</h3>
+            <h3 id={titleId} className="font-semibold text-slate-800 dark:text-slate-100">
+              Recycle Bin
+            </h3>
             {!loading && (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-300">
                 {items.length}
               </span>
             )}
@@ -174,6 +186,7 @@ export default function TrashDialog({ open, onClose, onChanged }) {
               onClick={onClose}
               className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700"
               title="Tutup"
+              aria-label="Tutup recycle bin"
             >
               <X className="h-5 w-5" />
             </button>
@@ -197,7 +210,7 @@ export default function TrashDialog({ open, onClose, onChanged }) {
             </div>
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-center">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-700">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-200 text-slate-400 dark:bg-slate-700">
                 <History className="h-6 w-6" />
               </span>
               <p className="text-sm font-medium text-slate-500 dark:text-slate-300">
@@ -207,13 +220,14 @@ export default function TrashDialog({ open, onClose, onChanged }) {
             </div>
           ) : (
             <ul className="space-y-2">
-              {items.map((t) => {
+              {items.map((t, i) => {
                 const meta = itemMeta(t);
                 const Icon = meta.Icon;
                 return (
                   <li
                     key={`${t.entity}-${t.id}`}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 p-3 dark:border-slate-700"
+                    className="flex animate-list-in items-center justify-between gap-3 rounded-xl border border-slate-100 p-3 dark:border-slate-700"
+                    style={{ animationDelay: `${Math.min(i, 10) * 20}ms` }}
                   >
                     <div className="flex min-w-0 items-center gap-3">
                       <span
@@ -226,7 +240,7 @@ export default function TrashDialog({ open, onClose, onChanged }) {
                           <p className="truncate font-medium text-slate-800 dark:text-slate-100">
                             {meta.title}
                           </p>
-                          <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:bg-slate-700 dark:text-slate-300">
+                          <span className="shrink-0 rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:bg-slate-700 dark:text-slate-300">
                             {ENTITY_LABEL[t.entity] || t.entity}
                           </span>
                         </div>
@@ -242,6 +256,7 @@ export default function TrashDialog({ open, onClose, onChanged }) {
                         disabled={busy}
                         className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50 dark:hover:bg-slate-700"
                         title="Pulihkan"
+                        aria-label={`Pulihkan ${meta.title}`}
                       >
                         <RotateCcw className="h-4 w-4" />
                       </button>
@@ -250,6 +265,7 @@ export default function TrashDialog({ open, onClose, onChanged }) {
                         disabled={busy}
                         className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:hover:bg-slate-700"
                         title="Hapus permanen"
+                        aria-label={`Hapus permanen ${meta.title}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>

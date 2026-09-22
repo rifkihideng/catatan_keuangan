@@ -9,7 +9,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+// Limit dinaikkan dari default 100kb agar import CSV & restore backup JSON besar tidak gagal 413
+app.use(express.json({ limit: '5mb' }));
 
 // Helper pengaturan (settings)
 function getSetting(key, fallback = '0') {
@@ -21,6 +22,28 @@ function setSetting(key, value) {
   db.prepare(
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
   ).run(key, String(value));
+}
+
+// Validasi tanggal ISO (YYYY-MM-DD) sekaligus memastikan tanggalnya nyata (mis. 2026-02-30 ditolak)
+function isValidDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+// Nominal wajib angka berhingga dan lebih dari 0 (menolak negatif, NaN, dan teks)
+function parseAmount(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+// Normalisasi accountId: kosong → null, id valid → number, tidak valid/tidak ada → undefined
+function normalizeAccountId(accountId) {
+  if (accountId === null || accountId === undefined || accountId === '') return null;
+  const id = Number(accountId);
+  if (!Number.isInteger(id) || id <= 0) return undefined;
+  return db.prepare('SELECT 1 FROM accounts WHERE id = ?').get(id) ? id : undefined;
 }
 
 function getTransaction(id) {
@@ -111,18 +134,29 @@ app.get('/api/transactions', (req, res) => {
 // Tambah transaksi baru
 app.post('/api/transactions', (req, res) => {
   const { type, amount, category, description, date, accountId } = req.body ?? {};
-  if (!type || !amount || !date) {
+  if (!type || amount === undefined || amount === null || amount === '' || !date) {
     return res.status(400).json({ error: 'type, amount, dan date wajib diisi' });
   }
   if (!['income', 'expense'].includes(type)) {
     return res.status(400).json({ error: 'type harus income atau expense' });
+  }
+  const value = parseAmount(amount);
+  if (value === null) {
+    return res.status(400).json({ error: 'Nominal harus angka lebih dari 0' });
+  }
+  if (!isValidDate(date)) {
+    return res.status(400).json({ error: 'Tanggal harus format YYYY-MM-DD' });
+  }
+  const accId = normalizeAccountId(accountId);
+  if (accId === undefined) {
+    return res.status(400).json({ error: 'Rekening tidak ditemukan' });
   }
 
   const result = db
     .prepare(
       'INSERT INTO transactions (type, amount, category, description, date, account_id) VALUES (?, ?, ?, ?, ?, ?)'
     )
-    .run(type, amount, category || '', description || '', date, accountId || null);
+    .run(type, value, category || '', description || '', date, accId);
 
   res.status(201).json(getTransaction(Number(result.lastInsertRowid)));
 });
@@ -141,10 +175,11 @@ app.post('/api/transactions/import', (req, res) => {
     db.exec('BEGIN');
     for (const t of items) {
       const { type, amount, category, description, date, accountId } = t ?? {};
-      const value = Number(amount);
+      const value = parseAmount(amount);
       if (!type || !['income', 'expense'].includes(type)) continue;
-      if (!date || Number.isNaN(value) || value <= 0) continue;
-      insert.run(type, value, category || '', description || '', date, accountId || null);
+      if (value === null || !isValidDate(date)) continue;
+      const accId = normalizeAccountId(accountId);
+      insert.run(type, value, category || '', description || '', date, accId ?? null);
       count++;
     }
     db.exec('COMMIT');
@@ -158,18 +193,29 @@ app.post('/api/transactions/import', (req, res) => {
 // Perbarui transaksi
 app.put('/api/transactions/:id', (req, res) => {
   const { type, amount, category, description, date, accountId } = req.body ?? {};
-  if (!type || !amount || !date) {
+  if (!type || amount === undefined || amount === null || amount === '' || !date) {
     return res.status(400).json({ error: 'type, amount, dan date wajib diisi' });
   }
   if (!['income', 'expense'].includes(type)) {
     return res.status(400).json({ error: 'type harus income atau expense' });
   }
+  const value = parseAmount(amount);
+  if (value === null) {
+    return res.status(400).json({ error: 'Nominal harus angka lebih dari 0' });
+  }
+  if (!isValidDate(date)) {
+    return res.status(400).json({ error: 'Tanggal harus format YYYY-MM-DD' });
+  }
+  const accId = normalizeAccountId(accountId);
+  if (accId === undefined) {
+    return res.status(400).json({ error: 'Rekening tidak ditemukan' });
+  }
 
   const result = db
     .prepare(
-      'UPDATE transactions SET type = ?, amount = ?, category = ?, description = ?, date = ?, account_id = ? WHERE id = ?'
+      'UPDATE transactions SET type = ?, amount = ?, category = ?, description = ?, date = ?, account_id = ? WHERE id = ? AND deleted_at IS NULL'
     )
-    .run(type, amount, category || '', description || '', date, accountId || null, req.params.id);
+    .run(type, value, category || '', description || '', date, accId, req.params.id);
 
   if (Number(result.changes) === 0) {
     return res.status(404).json({ error: 'Transaksi tidak ditemukan' });
@@ -786,7 +832,14 @@ app.get('/api/summary', (req, res) => {
     )
     .get();
 
-  // Tren saldo kumulatif dari waktu ke waktu (harian)
+  // Saldo awal seluruh rekening aktif — disamakan dengan GET /api/accounts
+  // agar "Saldo" di ringkasan tidak berbeda dengan "Total" di kartu Rekening.
+  const initialBalances =
+    db
+      .prepare('SELECT COALESCE(SUM(initial_balance), 0) AS total FROM accounts WHERE deleted_at IS NULL')
+      .get().total || 0;
+
+  // Tren saldo kumulatif dari waktu ke waktu (harian), dimulai dari saldo awal
   const dailyDelta = db
     .prepare(
       `SELECT date, SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END) AS delta
@@ -796,7 +849,7 @@ app.get('/api/summary', (req, res) => {
        ORDER BY date`
     )
     .all();
-  let runningBalance = 0;
+  let runningBalance = initialBalances;
   const balanceTrend = dailyDelta.map((r) => {
     runningBalance += Number(r.delta);
     return { date: r.date, balance: runningBalance };
@@ -807,7 +860,8 @@ app.get('/api/summary', (req, res) => {
   res.json({
     income: totals.income,
     expense: totals.expense,
-    balance: totals.income - totals.expense,
+    initialBalances,
+    balance: initialBalances + totals.income - totals.expense,
     monthExpense,
     budget,
     savingsGoal,
@@ -853,6 +907,29 @@ function backupDatabaseFile() {
     console.error('⚠️ Gagal membuat backup otomatis:', err.message);
   }
 }
+
+// Handler error terakhir: semua kegagalan dibalas JSON (bukan halaman HTML dari Express)
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const message = String(err?.message || '');
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Data terlalu besar (maksimal 5 MB)' });
+  }
+  if (err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({ error: 'Format JSON tidak valid' });
+  }
+  if (message.includes('UNIQUE constraint failed')) {
+    return res.status(409).json({ error: 'Data sudah ada' });
+  }
+  if (message.includes('FOREIGN KEY constraint failed')) {
+    return res.status(400).json({ error: 'Referensi data tidak valid' });
+  }
+  if (message.includes('CHECK constraint failed')) {
+    return res.status(400).json({ error: 'Nilai tidak diizinkan' });
+  }
+  console.error('❌ Error tidak tertangani:', err);
+  res.status(500).json({ error: 'Terjadi kesalahan pada server' });
+});
 
 const PORT = process.env.PORT || 3001;
 processRecurring();

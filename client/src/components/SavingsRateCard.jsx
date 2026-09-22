@@ -4,7 +4,7 @@ import { formatRupiah, formatRupiahCompact } from '../format';
 const R = 34;
 const CIRC = 2 * Math.PI * R;
 
-export default function SavingsRateCard({ income = 0, expense = 0, monthly = [] }) {
+export default function SavingsRateCard({ income = 0, expense = 0, monthly = [], periodLabel }) {
   const incomeN = Number(income) || 0;
   const recentMonths = (Array.isArray(monthly) ? monthly : [])
     .slice()
@@ -28,6 +28,11 @@ export default function SavingsRateCard({ income = 0, expense = 0, monthly = [] 
         <h2 className="text-base font-bold text-slate-900 dark:text-white">
           Pemasukan vs Pengeluaran
         </h2>
+        {periodLabel && (
+          <span className="ml-auto rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+            {periodLabel}
+          </span>
+        )}
       </div>
 
       <div className="mt-4 flex items-center gap-4">
@@ -86,7 +91,7 @@ export default function SavingsRateCard({ income = 0, expense = 0, monthly = [] 
       {recentMonths.length > 0 && (
         <div className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-700">
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Per bulan
+            Per bulan (semua data)
           </h3>
           <ul className="space-y-1.5">
             {recentMonths.map((m) => {
@@ -121,7 +126,7 @@ export default function SavingsRateCard({ income = 0, expense = 0, monthly = [] 
       )}
 
       <div className="mt-auto pt-4">
-        <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+        <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
           <div className="bg-emerald-500" style={{ width: `${incomePct}%` }} />
           <div className="bg-rose-500" style={{ width: `${expensePct}%` }} />
         </div>

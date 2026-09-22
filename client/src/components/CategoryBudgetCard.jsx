@@ -1,29 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { PieChart, Pencil, Plus, Trash2 } from 'lucide-react';
-import { deleteCategoryBudget, getCategories, setCategoryBudget } from '../api';
+import { deleteCategoryBudget, setCategoryBudget } from '../api';
 import { formatRupiah } from '../format';
 
-export default function CategoryBudgetCard({ budgets, expenses, onReload }) {
-  const [cats, setCats] = useState([]);
+export default function CategoryBudgetCard({ budgets, expenses, categories = [], onReload }) {
   const [showForm, setShowForm] = useState(false);
   const [selCat, setSelCat] = useState('');
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    getCategories()
-      .then((c) => {
-        setCats(c.expense);
-        setSelCat(c.expense[0] || '');
-      })
-      .catch(() => {});
-  }, []);
+  // Daftar kategori datang dari App agar selalu sinkron setelah kategori diubah
+  const options =
+    selCat && !categories.includes(selCat) ? [selCat, ...categories] : categories;
 
   const expenseMap = Object.fromEntries((expenses || []).map((e) => [e.category, e.total]));
 
   function openAdd() {
-    setSelCat(cats[0] || '');
+    setSelCat(categories[0] || '');
     setAmount('');
     setError('');
     setShowForm(true);
@@ -62,14 +56,18 @@ export default function CategoryBudgetCard({ budgets, expenses, onReload }) {
   }
 
   async function remove(cat) {
-    await deleteCategoryBudget(cat);
-    await onReload();
+    try {
+      await deleteCategoryBudget(cat);
+      await onReload();
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   return (
     <div className="card p-5">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 font-bold text-slate-900">
+        <h2 className="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
           <PieChart className="h-4 w-4 text-indigo-600" /> Anggaran per Kategori
         </h2>
         <button
@@ -87,13 +85,14 @@ export default function CategoryBudgetCard({ budgets, expenses, onReload }) {
       </div>
 
       {showForm && (
-        <form onSubmit={submit} className="mb-4 space-y-2 rounded-lg bg-slate-50 p-3">
+        <form onSubmit={submit} className="mb-4 space-y-2 rounded-lg bg-slate-100 p-3 dark:bg-slate-900">
           <select
             value={selCat}
             onChange={(e) => setSelCat(e.target.value)}
             className="input"
+            aria-label="Pilih kategori"
           >
-            {cats.map((c) => (
+            {options.map((c) => (
               <option key={c}>{c}</option>
             ))}
           </select>
@@ -115,7 +114,9 @@ export default function CategoryBudgetCard({ budgets, expenses, onReload }) {
       )}
 
       {budgets.length === 0 && !showForm ? (
-        <p className="py-4 text-sm text-slate-400">Belum ada anggaran per kategori. Klik "Tambah".</p>
+        <p className="py-4 text-sm text-slate-400 dark:text-slate-400">
+          Belum ada anggaran per kategori. Klik "Tambah".
+        </p>
       ) : (
         <ul className="space-y-3">
           {budgets.map((b) => {
@@ -126,15 +127,16 @@ export default function CategoryBudgetCard({ budgets, expenses, onReload }) {
             return (
               <li key={b.category}>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-slate-700">{b.category}</span>
+                  <span className="font-medium text-slate-700 dark:text-slate-200">{b.category}</span>
                   <span className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
                       {formatRupiah(spent)} / {formatRupiah(limit)}
                     </span>
                     <button
                       onClick={() => openEdit(b)}
                       className="text-slate-400 transition-colors hover:text-indigo-600"
                       title="Edit"
+                      aria-label={`Edit anggaran ${b.category}`}
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
@@ -142,12 +144,13 @@ export default function CategoryBudgetCard({ budgets, expenses, onReload }) {
                       onClick={() => remove(b.category)}
                       className="text-slate-400 transition-colors hover:text-rose-600"
                       title="Hapus"
+                      aria-label={`Hapus anggaran ${b.category}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </span>
                 </div>
-                <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                   <div
                     className={`h-full rounded-full transition-all ${
                       over ? 'bg-rose-500' : percent >= 80 ? 'bg-amber-500' : 'bg-emerald-500'

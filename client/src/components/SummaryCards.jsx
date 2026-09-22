@@ -1,12 +1,14 @@
 import { Calendar, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import { formatRupiah, formatRupiahCompact } from '../format';
 
-export default function SummaryCards({ summary, periodLabel }) {
+export default function SummaryCards({ summary, periodLabel, balance }) {
+  const totals = summary || {};
+  const scope = periodLabel || 'Semua data';
   const cards = [
     {
       label: 'Saldo',
-      sub: 'Total dana saat ini',
-      value: summary?.balance ?? 0,
+      sub: 'Semua rekening · saat ini',
+      value: balance ?? totals.balance ?? 0,
       icon: Wallet,
       chip: 'from-indigo-500 to-violet-500',
       valueClass: 'text-slate-900 dark:text-white',
@@ -14,8 +16,8 @@ export default function SummaryCards({ summary, periodLabel }) {
     },
     {
       label: 'Pemasukan',
-      sub: 'Uang masuk',
-      value: summary?.income ?? 0,
+      sub: `Uang masuk · ${scope}`,
+      value: totals.income ?? 0,
       icon: TrendingUp,
       chip: 'from-emerald-500 to-teal-500',
       valueClass: 'text-emerald-600',
@@ -23,8 +25,8 @@ export default function SummaryCards({ summary, periodLabel }) {
     },
     {
       label: 'Pengeluaran',
-      sub: 'Uang keluar',
-      value: summary?.expense ?? 0,
+      sub: `Uang keluar · ${scope}`,
+      value: totals.expense ?? 0,
       icon: TrendingDown,
       chip: 'from-rose-500 to-orange-500',
       valueClass: 'text-rose-600',
@@ -50,7 +52,7 @@ export default function SummaryCards({ summary, periodLabel }) {
           return (
             <div
               key={c.label}
-              className="group relative overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800"
+              className="group relative overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-5 shadow-sm transition-all duration-300 ease-smooth hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-700/60 dark:bg-slate-800"
             >
               <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${c.chip}`} />
               <div className="flex items-center gap-3">

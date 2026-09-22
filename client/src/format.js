@@ -6,6 +6,14 @@ export function formatRupiah(n) {
   }).format(Number(n) || 0);
 }
 
+// Tanggal hari ini menurut waktu lokal (YYYY-MM-DD).
+// new Date().toISOString() memakai UTC, sehingga di WIB (UTC+7) pukul 00:00–06:59
+// akan menghasilkan tanggal kemarin.
+export function todayLocal(date = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
+}
+
 // Format ringkas untuk kartu ringkasan agar angka tidak keluar kolom
 export function formatRupiahCompact(n) {
   const v = Number(n) || 0;

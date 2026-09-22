@@ -1,11 +1,25 @@
+import { useId } from 'react';
+import { useModalA11y } from '../useModalA11y';
+
 export default function ConfirmDialog({ open, title, message, onCancel, onConfirm, loading }) {
+  const titleId = useId();
+  // capture: true → Escape hanya menutup konfirmasi ini, bukan dialog induknya
+  const panelRef = useModalA11y(open, onCancel, { capture: true });
+
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 print:hidden">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onCancel} />
-      <div className="relative w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="font-semibold text-slate-800">{title}</h3>
+      <div className="absolute inset-0 animate-fade-in bg-slate-900/40" onClick={onCancel} />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="relative w-full max-w-sm animate-dialog-in rounded-xl bg-white p-5 shadow-xl outline-none"
+      >
+        <h3 id={titleId} className="font-semibold text-slate-800">{title}</h3>
         <p className="mt-1 text-sm text-slate-500">{message}</p>
         <div className="mt-4 flex justify-end gap-2">
           <button

@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Minus, Pencil, Plus } from 'lucide-react';
 import { addCategory, getCategories } from '../api';
+import { todayLocal } from '../format';
 import CategoryManager from './CategoryManager';
 
 const FALLBACK = { income: ['Lainnya'], expense: ['Lainnya'] };
 
-export default function TransactionForm({ onAdd, onUpdate, editing, onCancelEdit, accounts = [] }) {
-  const today = new Date().toISOString().slice(0, 10);
+export default function TransactionForm({
+  onAdd,
+  onUpdate,
+  editing,
+  onCancelEdit,
+  accounts = [],
+  onCategoriesChanged,
+}) {
+  const today = todayLocal();
   const [cats, setCats] = useState(FALLBACK);
   const [type, setType] = useState('expense');
   const [amount, setAmount] = useState('');
@@ -24,6 +32,8 @@ export default function TransactionForm({ onAdd, onUpdate, editing, onCancelEdit
     getCategories()
       .then((c) => setCats(c))
       .catch(() => {});
+    // Beri tahu induk agar daftar kategori di tempat lain (filter, anggaran) ikut segar
+    onCategoriesChanged?.();
   }
 
   useEffect(() => {
@@ -100,6 +110,7 @@ export default function TransactionForm({ onAdd, onUpdate, editing, onCancelEdit
       setCategory(created.name);
       setNewCat('');
       setShowAddCat(false);
+      onCategoriesChanged?.();
     } catch (err) {
       setError(err.message);
     }
@@ -117,7 +128,7 @@ export default function TransactionForm({ onAdd, onUpdate, editing, onCancelEdit
         </h2>
       </div>
 
-      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-200 p-1 dark:bg-slate-700">
         <button
           type="button"
           onClick={() => switchType('expense')}

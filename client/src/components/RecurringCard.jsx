@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Power, Plus, Repeat, Trash2 } from 'lucide-react';
-import { formatRupiah } from '../format';
+import { formatRupiah, todayLocal } from '../format';
 
 const FREQ_LABEL = { daily: 'Harian', weekly: 'Mingguan', monthly: 'Bulanan' };
 
@@ -11,7 +11,7 @@ export default function RecurringCard({ recurring = [], accounts = [], onAdd, on
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
   const [frequency, setFrequency] = useState('monthly');
-  const [nextDate, setNextDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [nextDate, setNextDate] = useState(() => todayLocal());
   const [accountId, setAccountId] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -69,8 +69,8 @@ export default function RecurringCard({ recurring = [], accounts = [], onAdd, on
       </div>
 
       {showForm && (
-        <form onSubmit={submit} className="mb-4 space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-900">
-          <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+        <form onSubmit={submit} className="mb-4 space-y-2 rounded-xl bg-slate-100 p-3 dark:bg-slate-900">
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-200 p-1 dark:bg-slate-700">
             <button
               type="button"
               onClick={() => setType('expense')}
@@ -187,6 +187,7 @@ export default function RecurringCard({ recurring = [], accounts = [], onAdd, on
                       : 'text-slate-400 hover:text-slate-500'
                   }`}
                   title={r.active ? 'Nonaktifkan' : 'Aktifkan'}
+                  aria-label={`${r.active ? 'Nonaktifkan' : 'Aktifkan'} ${r.category || 'tanpa kategori'}`}
                 >
                   <Power className="h-4 w-4" />
                 </button>
@@ -194,6 +195,7 @@ export default function RecurringCard({ recurring = [], accounts = [], onAdd, on
                   onClick={() => onDelete(r.id)}
                   className="p-1 text-slate-400 transition-colors hover:text-rose-600"
                   title="Hapus"
+                  aria-label={`Hapus transaksi berulang ${r.category || 'tanpa kategori'}`}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>

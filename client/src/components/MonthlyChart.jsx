@@ -19,7 +19,7 @@ export default function MonthlyChart({ data }) {
 
   return (
     <div className="card p-5">
-      <h2 className="mb-4 flex items-center gap-2 font-bold text-slate-900">
+      <h2 className="mb-4 flex items-center gap-2 font-bold text-slate-900 dark:text-white">
         <BarChart3 className="h-4 w-4 text-indigo-600" /> Grafik Bulanan
       </h2>
       {chartData.length === 0 ? (
@@ -40,7 +40,7 @@ export default function MonthlyChart({ data }) {
                   <stop offset="100%" stopColor="#f43f5e" />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
               <XAxis
                 dataKey="name"
                 axisLine={false}
@@ -54,9 +54,27 @@ export default function MonthlyChart({ data }) {
                 tick={{ fill: '#94a3b8', fontSize: 12 }}
                 width={48}
               />
-              <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(148,163,184,0.08)' }} />
-              <Bar dataKey="Pemasukan" fill="url(#gradIncome)" radius={[6, 6, 0, 0]} maxBarSize={36} />
-              <Bar dataKey="Pengeluaran" fill="url(#gradExpense)" radius={[6, 6, 0, 0]} maxBarSize={36} />
+              <Tooltip
+                content={<ChartTooltip />}
+                cursor={{ fill: 'rgba(148,163,184,0.08)' }}
+                animationDuration={150}
+              />
+              <Bar
+                dataKey="Pemasukan"
+                fill="url(#gradIncome)"
+                radius={[6, 6, 0, 0]}
+                maxBarSize={36}
+                animationDuration={600}
+                animationEasing="ease-out"
+              />
+              <Bar
+                dataKey="Pengeluaran"
+                fill="url(#gradExpense)"
+                radius={[6, 6, 0, 0]}
+                maxBarSize={36}
+                animationDuration={600}
+                animationEasing="ease-out"
+              />
             </BarChart>
           </ResponsiveContainer>
           <div className="mt-2 flex items-center justify-center gap-5 text-xs font-medium text-slate-500">

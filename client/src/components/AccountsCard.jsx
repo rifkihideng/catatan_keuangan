@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeftRight, Pencil, Plus, Trash2 } from 'lucide-react';
-import { formatRupiah } from '../format';
+import { formatRupiah, todayLocal } from '../format';
 import { ACCOUNT_PRESETS, getAccountColor, getAccountIcon } from '../accountIcons';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -22,7 +22,7 @@ export default function AccountsCard({
   const [toId, setToId] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => todayLocal());
   const [editingId, setEditingId] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -56,7 +56,7 @@ export default function AccountsCard({
     setToId('');
     setAmount('');
     setNote('');
-    setDate(new Date().toISOString().slice(0, 10));
+    setDate(todayLocal());
   }
 
   function openEditTransfer(t) {
@@ -159,7 +159,7 @@ export default function AccountsCard({
   return (
     <div className="card p-5">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-semibold">Rekening</h2>
+        <h2 className="font-semibold dark:text-slate-100">Rekening</h2>
         <div className="flex gap-2">
           <button
             onClick={toggleTransfer}
@@ -338,6 +338,7 @@ export default function AccountsCard({
                       onClick={() => setPendingDeleteAccount(a)}
                       className="text-slate-400 transition-colors hover:text-rose-600"
                       title="Hapus"
+                      aria-label={`Hapus rekening ${a.name}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -384,6 +385,7 @@ export default function AccountsCard({
                     onClick={() => openEditTransfer(t)}
                     className="text-slate-400 transition-colors hover:text-indigo-600"
                     title="Edit transfer"
+                    aria-label={`Edit transfer ${accountName(t.from_account_id)} ke ${accountName(t.to_account_id)}`}
                   >
                     <Pencil className="h-4 w-4" />
                   </button>
@@ -391,6 +393,7 @@ export default function AccountsCard({
                     onClick={() => setPendingDelete(t)}
                     className="text-slate-400 transition-colors hover:text-rose-600"
                     title="Hapus transfer"
+                    aria-label={`Hapus transfer ${accountName(t.from_account_id)} ke ${accountName(t.to_account_id)}`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>

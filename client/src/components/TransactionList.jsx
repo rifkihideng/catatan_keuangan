@@ -24,6 +24,7 @@ export default function TransactionList({
   to,
   setTo,
   loading,
+  refreshing,
   onDelete,
   onEdit,
   onTrashChanged,
@@ -96,11 +97,21 @@ export default function TransactionList({
     <div className="card p-5 print:border-none print:p-0 print:shadow-none">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-base font-bold text-slate-900">Riwayat Transaksi</h2>
-          {!loading && (
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
-              {transactions.length}
+          <h2 className="text-base font-bold text-slate-900 dark:text-white">Riwayat Transaksi</h2>
+          {refreshing ? (
+            <span
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400"
+              role="status"
+            >
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500" />
+              Memuat...
             </span>
+          ) : (
+            !loading && (
+              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+                {transactions.length}
+              </span>
+            )
           )}
         </div>
         <div className="flex flex-col gap-2 print:hidden lg:flex-row lg:flex-wrap lg:items-center">
@@ -111,14 +122,16 @@ export default function TransactionList({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Cari transaksi..."
-              className="w-48 rounded-xl border border-slate-300 bg-white py-1.5 pl-8 pr-3 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+              aria-label="Cari transaksi"
+              className="input w-48 pl-8"
             />
           </div>
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+            className="input w-auto"
             title="Filter kategori"
+            aria-label="Filter kategori"
           >
             <option value="">Semua kategori</option>
             {allCategories.map((c) => (
@@ -130,8 +143,9 @@ export default function TransactionList({
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value)}
-            className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+            className="input w-auto"
             title="Urutkan"
+            aria-label="Urutkan transaksi"
           >
             <option value="date-desc">Tanggal (terbaru)</option>
             <option value="date-asc">Tanggal (terlama)</option>
@@ -151,8 +165,9 @@ export default function TransactionList({
                   setTo('');
                 }
               }}
-              className="w-40 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+              className="input w-40"
               title="Filter per bulan"
+              aria-label="Filter per bulan"
             />
             <span className="text-xs text-slate-400">atau</span>
             <input
@@ -162,8 +177,9 @@ export default function TransactionList({
                 setFrom(e.target.value);
                 if (e.target.value) setMonth('');
               }}
-              className="w-40 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+              className="input w-40"
               title="Dari tanggal"
+              aria-label="Dari tanggal"
             />
             <span className="text-xs text-slate-400">–</span>
             <input
@@ -173,8 +189,9 @@ export default function TransactionList({
                 setTo(e.target.value);
                 if (e.target.value) setMonth('');
               }}
-              className="w-40 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+              className="input w-40"
               title="Sampai tanggal"
+              aria-label="Sampai tanggal"
             />
             {(month || from || to || category || search) && (
               <button
@@ -185,16 +202,18 @@ export default function TransactionList({
                   setCategory('');
                   setSearch('');
                 }}
-                className="rounded-xl border border-slate-300 px-2 py-1.5 text-sm text-slate-500 transition-colors hover:bg-slate-50"
+                className="rounded-xl border border-slate-300 px-2 py-1.5 text-sm text-slate-500 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
                 title="Reset filter"
+                aria-label="Reset filter"
               >
                 <X className="h-4 w-4" />
               </button>
             )}
             <button
               onClick={() => setTrashOpen(true)}
-              className="rounded-xl border border-slate-300 px-2 py-1.5 text-sm text-slate-500 transition-colors hover:bg-slate-50"
+              className="rounded-xl border border-slate-300 px-2 py-1.5 text-sm text-slate-500 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
               title="Recycle bin"
+              aria-label="Buka recycle bin"
             >
               <Archive className="h-4 w-4" />
             </button>
@@ -224,8 +243,12 @@ export default function TransactionList({
         </div>
       ) : (
         <ul className="divide-y divide-slate-100 dark:divide-slate-700">
-          {filtered.map((t) => (
-            <li key={t.id} className="flex items-center justify-between gap-3 py-3">
+          {filtered.map((t, i) => (
+            <li
+              key={t.id}
+              className="flex animate-list-in items-center justify-between gap-3 py-3"
+              style={{ animationDelay: `${Math.min(i, 12) * 20}ms` }}
+            >
               <div className="flex min-w-0 items-center gap-3">
                 <span
                   className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
@@ -262,6 +285,7 @@ export default function TransactionList({
                   onClick={() => onEdit(t)}
                   className="text-slate-400 transition-colors hover:text-indigo-600 print:hidden"
                   title="Edit"
+                  aria-label={`Edit transaksi ${t.category || 'tanpa kategori'}`}
                 >
                   <Pencil className="h-4 w-4" />
                 </button>
@@ -269,6 +293,7 @@ export default function TransactionList({
                   onClick={() => setPending(t)}
                   className="text-slate-400 transition-colors hover:text-rose-600 print:hidden"
                   title="Hapus"
+                  aria-label={`Hapus transaksi ${t.category || 'tanpa kategori'}`}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>

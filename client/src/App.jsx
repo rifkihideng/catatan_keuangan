@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
   CircleAlert,
@@ -40,15 +40,17 @@ import {
   updateTransaction,
   updateTransfer,
 } from './api';
+import { todayLocal } from './format';
 import SummaryCards from './components/SummaryCards';
 import LoadingScreen from './components/LoadingScreen';
 import TransactionForm from './components/TransactionForm';
 import TransactionList from './components/TransactionList';
-import MonthlyChart from './components/MonthlyChart';
-import BalanceTrendChart from './components/BalanceTrendChart';
+// Chart memakai Recharts (paket besar) → dimuat terpisah agar bundle awal ringan
+const MonthlyChart = lazy(() => import('./components/MonthlyChart'));
+const BalanceTrendChart = lazy(() => import('./components/BalanceTrendChart'));
+const CategoryChart = lazy(() => import('./components/CategoryChart'));
 import BudgetCard from './components/BudgetCard';
 import SavingsGoalCard from './components/SavingsGoalCard';
-import CategoryChart from './components/CategoryChart';
 import CategoryBudgetCard from './components/CategoryBudgetCard';
 import CategoryReport from './components/CategoryReport';
 import SavingsRateCard from './components/SavingsRateCard';
@@ -78,6 +80,10 @@ export default function App() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  // Penjaga respons usang: hanya respons dari permintaan terakhir yang dipakai
+  const requestIdRef = useRef(0);
+  const hasLoadedRef = useRef(false);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null);
   const [restoring, setRestoring] = useState(false);
@@ -96,11 +102,21 @@ export default function App() {
   );
   const effectiveTheme = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
 
+  // Transisi warna halus saat tema berganti (dilewati pada render pertama)
+  const themeReadyRef = useRef(false);
   useEffect(() => {
     document.documentElement.classList.toggle('dark', effectiveTheme === 'dark');
     try {
       localStorage.setItem('theme', theme);
     } catch {}
+    if (!themeReadyRef.current) {
+      themeReadyRef.current = true;
+      return undefined;
+    }
+    const root = document.documentElement;
+    root.classList.add('theme-transition');
+    const timer = setTimeout(() => root.classList.remove('theme-transition'), 280);
+    return () => clearTimeout(timer);
   }, [effectiveTheme, theme]);
 
   useEffect(() => {
@@ -112,7 +128,10 @@ export default function App() {
   }, []);
 
   const loadData = useCallback(async () => {
+    const id = ++requestIdRef.current;
+    const isReload = hasLoadedRef.current;
     const startedAt = Date.now();
+    if (isReload) setRefreshing(true);
     try {
       const [tx, sum, accs, trfs, recs, cats, report] = await Promise.all([
         getTransactions({ month, from, to }),
@@ -123,6 +142,7 @@ export default function App() {
         getCategories(),
         getCategoryMonthlyReport(),
       ]);
+      if (id !== requestIdRef.current) return;
       setTransactions(tx);
       setSummary(sum);
       setAccounts(accs);
@@ -132,10 +152,19 @@ export default function App() {
       setCategoryReport(report);
       setError('');
     } catch (err) {
+      if (id !== requestIdRef.current) return;
       setError(err.message);
     } finally {
-      const wait = Math.max(0, 2200 - (Date.now() - startedAt));
-      setTimeout(() => setLoading(false), wait);
+      if (id === requestIdRef.current) {
+        // Splash screen diberi waktu minimal 2,2 detik hanya pada pemuatan pertama
+        const wait = isReload ? 0 : Math.max(0, 2200 - (Date.now() - startedAt));
+        setTimeout(() => {
+          if (id !== requestIdRef.current) return;
+          hasLoadedRef.current = true;
+          setLoading(false);
+          setRefreshing(false);
+        }, wait);
+      }
     }
   }, [month, from, to]);
 
@@ -228,7 +257,7 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `backup-keuangan-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `backup-keuangan-${todayLocal()}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -364,6 +393,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen text-slate-800 print:bg-white dark:bg-slate-950 dark:text-slate-200">
+      {refreshing && (
+        <div
+          role="progressbar"
+          aria-label="Memuat data"
+          className="fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden bg-indigo-100 print:hidden dark:bg-slate-800"
+        >
+          <div className="animate-indeterminate h-full w-1/3 bg-indigo-500" />
+        </div>
+      )}
       <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl print:static print:border-none dark:border-slate-800 dark:bg-slate-900/80">
         <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -386,6 +424,9 @@ export default function App() {
                   setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light')
                 }
                 className="btn btn-secondary px-2.5 py-2"
+                aria-label={`Ganti tema (sekarang: ${
+                  theme === 'light' ? 'terang' : theme === 'dark' ? 'gelap' : 'otomatis'
+                })`}
                 title={
                   theme === 'light'
                     ? 'Tema: Terang'
@@ -448,7 +489,12 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6">
+      <main
+        aria-busy={refreshing}
+        className={`mx-auto max-w-6xl space-y-6 px-4 py-8 transition-opacity sm:px-6 ${
+          refreshing ? 'opacity-60' : 'opacity-100'
+        }`}
+      >
         {error && (
           <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 print:hidden dark:border-rose-900/50 dark:bg-rose-950/60 dark:text-rose-300">
             <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -484,7 +530,7 @@ export default function App() {
           </div>
         )}
 
-        <SummaryCards summary={totals} periodLabel={periodLabel} />
+        <SummaryCards summary={totals} periodLabel={periodLabel} balance={summary.balance} />
 
         <div className="print:hidden">
           <StatsCard stats={summary.stats} />
@@ -504,6 +550,7 @@ export default function App() {
           <CategoryBudgetCard
             budgets={summary.categoryBudgets || []}
             expenses={summary.categoryExpenses || []}
+            categories={categories.expense}
             onReload={loadData}
           />
         </div>
@@ -513,9 +560,10 @@ export default function App() {
             <CategoryReport data={categoryReport} />
           </div>
           <SavingsRateCard
-            income={summary.income}
-            expense={summary.expense}
+            income={totals.income}
+            expense={totals.expense}
             monthly={summary.monthly || []}
+            periodLabel={periodLabel}
           />
         </div>
 
@@ -527,6 +575,7 @@ export default function App() {
               editing={editing}
               onCancelEdit={handleCancelEdit}
               accounts={accounts}
+              onCategoriesChanged={loadData}
             />
             <AccountsCard
               accounts={accounts}
@@ -547,11 +596,17 @@ export default function App() {
           </div>
           <div className="space-y-6 lg:col-span-2 print:space-y-0">
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 print:hidden">
-              <MonthlyChart data={summary.monthly} />
-              <CategoryChart transactions={transactions} />
+              <Suspense fallback={<ChartSkeleton />}>
+                <MonthlyChart data={summary.monthly} />
+              </Suspense>
+              <Suspense fallback={<ChartSkeleton />}>
+                <CategoryChart transactions={transactions} />
+              </Suspense>
             </div>
             <div className="print:hidden">
-              <BalanceTrendChart data={summary.balanceTrend} />
+              <Suspense fallback={<ChartSkeleton />}>
+                <BalanceTrendChart data={summary.balanceTrend} />
+              </Suspense>
             </div>
             <TransactionList
               transactions={transactions}
@@ -563,6 +618,7 @@ export default function App() {
               to={to}
               setTo={setTo}
               loading={loading}
+              refreshing={refreshing}
               onDelete={handleDelete}
               onEdit={handleEdit}
               onTrashChanged={loadData}
@@ -570,6 +626,15 @@ export default function App() {
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+// Placeholder saat chunk chart sedang diunduh
+function ChartSkeleton() {
+  return (
+    <div className="card flex min-h-[16rem] items-center justify-center p-5">
+      <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500" />
     </div>
   );
 }

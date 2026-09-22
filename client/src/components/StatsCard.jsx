@@ -80,7 +80,7 @@ export default function StatsCard({ stats }) {
       {items.map((it) => {
         const Icon = it.icon;
         return (
-          <div key={it.label} className="card p-5 transition-shadow hover:shadow-md">
+          <div key={it.label} className="card p-5 transition-shadow duration-300 ease-smooth hover:shadow-md">
             <div className="flex items-start gap-3">
               <span
                 className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${it.chip}`}
