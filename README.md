@@ -15,6 +15,8 @@ project fix 4/
 
 ## Cara menjalankan
 
+> **Cara cepat** (dari folder root): `npm install` lalu `npm run dev` untuk menjalankan backend & frontend sekaligus. Script lain: `npm run server`, `npm run client`, `npm run build`.
+
 ### 1. Backend (server)
 ```bash
 cd server
