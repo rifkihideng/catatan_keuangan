@@ -6,6 +6,7 @@ export default function SavingsGoalCard({ balance, goal, onSave }) {
   const [value, setValue] = useState('');
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const target = Number(goal) || 0;
   const current = Number(balance) || 0;
@@ -21,12 +22,18 @@ export default function SavingsGoalCard({ balance, goal, onSave }) {
   async function save(e) {
     e.preventDefault();
     const amount = Number(value);
-    if (Number.isNaN(amount) || amount < 0) return;
+    if (Number.isNaN(amount) || amount < 0) {
+      setError('Target harus angka 0 atau lebih');
+      return;
+    }
     setSaving(true);
+    setError('');
     try {
       await onSave(amount);
       setValue('');
       setEditing(false);
+    } catch (err) {
+      setError(err.message || 'Gagal menyimpan target');
     } finally {
       setSaving(false);
     }
@@ -47,7 +54,8 @@ export default function SavingsGoalCard({ balance, goal, onSave }) {
       </div>
 
       {editing ? (
-        <form onSubmit={save} className="flex gap-2">
+        <>
+          <form onSubmit={save} className="flex gap-2">
           <input
             type="number"
             min="0"
@@ -61,6 +69,12 @@ export default function SavingsGoalCard({ balance, goal, onSave }) {
             {saving ? '...' : 'Simpan'}
           </button>
         </form>
+        {error && (
+          <p role="alert" className="mt-2 text-xs font-medium text-rose-600">
+            {error}
+          </p>
+        )}
+        </>
       ) : target > 0 ? (
         <>
           <p className="text-sm text-slate-500">

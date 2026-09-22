@@ -172,81 +172,57 @@ export default function App() {
     loadData();
   }, [loadData]);
 
-  async function handleAdd(data) {
-    await addTransaction(data);
-    await loadData();
-  }
+  // Semua aksi tulis lewat sini: muat ulang data, tampilkan kegagalan di banner
+  // global, lalu teruskan error ke komponen agar pesannya muncul di tempat aksi.
+  const runAction = useCallback(
+    async (action) => {
+      try {
+        await action();
+        await loadData();
+      } catch (err) {
+        setError(err.message || 'Terjadi kesalahan');
+        throw err;
+      }
+    },
+    [loadData]
+  );
 
-  async function handleDelete(id) {
-    await deleteTransaction(id);
-    await loadData();
-  }
+  const handleAdd = (data) => runAction(() => addTransaction(data));
 
-  async function handleUpdate(id, data) {
-    await updateTransaction(id, data);
-    setEditing(null);
-    await loadData();
-  }
+  const handleDelete = (id) => runAction(() => deleteTransaction(id));
 
-  async function handleSaveBudget(amount) {
-    await setBudget(amount);
-    await loadData();
-  }
+  const handleUpdate = (id, data) =>
+    runAction(async () => {
+      await updateTransaction(id, data);
+      setEditing(null);
+    });
 
-  async function handleSaveCategoryBudget(category, amount) {
-    await setCategoryBudget(category, amount);
-    await loadData();
-  }
+  const handleSaveBudget = (amount) => runAction(() => setBudget(amount));
 
-  async function handleDeleteCategoryBudget(category) {
-    await deleteCategoryBudget(category);
-    await loadData();
-  }
+  const handleSaveCategoryBudget = (category, amount) =>
+    runAction(() => setCategoryBudget(category, amount));
 
-  async function handleAddAccount(name, initial, kind) {
-    await addAccount(name, initial, kind);
-    await loadData();
-  }
+  const handleDeleteCategoryBudget = (category) =>
+    runAction(() => deleteCategoryBudget(category));
 
-  async function handleDeleteAccount(id) {
-    await deleteAccount(id);
-    await loadData();
-  }
+  const handleAddAccount = (name, initial, kind) =>
+    runAction(() => addAccount(name, initial, kind));
 
-  async function handleTransfer(data) {
-    await addTransfer(data);
-    await loadData();
-  }
+  const handleDeleteAccount = (id) => runAction(() => deleteAccount(id));
 
-  async function handleUpdateTransfer(id, data) {
-    await updateTransfer(id, data);
-    await loadData();
-  }
+  const handleTransfer = (data) => runAction(() => addTransfer(data));
 
-  async function handleDeleteTransfer(id) {
-    await deleteTransfer(id);
-    await loadData();
-  }
+  const handleUpdateTransfer = (id, data) => runAction(() => updateTransfer(id, data));
 
-  async function handleAddRecurring(data) {
-    await addRecurring(data);
-    await loadData();
-  }
+  const handleDeleteTransfer = (id) => runAction(() => deleteTransfer(id));
 
-  async function handleToggleRecurring(id, active) {
-    await toggleRecurring(id, active);
-    await loadData();
-  }
+  const handleAddRecurring = (data) => runAction(() => addRecurring(data));
 
-  async function handleDeleteRecurring(id) {
-    await deleteRecurring(id);
-    await loadData();
-  }
+  const handleToggleRecurring = (id, active) => runAction(() => toggleRecurring(id, active));
 
-  async function handleSaveSavingsGoal(amount) {
-    await setSavingsGoal(amount);
-    await loadData();
-  }
+  const handleDeleteRecurring = (id) => runAction(() => deleteRecurring(id));
+
+  const handleSaveSavingsGoal = (amount) => runAction(() => setSavingsGoal(amount));
 
   async function handleBackup() {
     try {

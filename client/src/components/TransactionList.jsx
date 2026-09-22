@@ -34,6 +34,7 @@ export default function TransactionList({
   const [sort, setSort] = useState('date-desc');
   const [pending, setPending] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [trashOpen, setTrashOpen] = useState(false);
 
   const allCategories = useMemo(
@@ -85,12 +86,21 @@ export default function TransactionList({
   async function confirmDelete() {
     if (!pending) return;
     setDeleting(true);
+    setDeleteError('');
     try {
       await onDelete(pending.id);
       setPending(null);
+    } catch (err) {
+      // Jangan tutup dialog saat gagal — tampilkan alasannya agar tidak terkesan "diam saja"
+      setDeleteError(err.message || 'Gagal menghapus transaksi');
     } finally {
       setDeleting(false);
     }
+  }
+
+  function cancelDelete() {
+    setPending(null);
+    setDeleteError('');
   }
 
   return (
@@ -290,7 +300,10 @@ export default function TransactionList({
                   <Pencil className="h-4 w-4" />
                 </button>
                 <button
-                  onClick={() => setPending(t)}
+                  onClick={() => {
+                    setDeleteError('');
+                    setPending(t);
+                  }}
                   className="text-slate-400 transition-colors hover:text-rose-600 print:hidden"
                   title="Hapus"
                   aria-label={`Hapus transaksi ${t.category || 'tanpa kategori'}`}
@@ -309,7 +322,8 @@ export default function TransactionList({
         message={`"${pending?.category || 'Tanpa kategori'}" sebesar ${formatRupiah(
           pending?.amount ?? 0
         )} akan dipindah ke recycle bin (bisa dipulihkan 30 hari).`}
-        onCancel={() => setPending(null)}
+        error={deleteError}
+        onCancel={cancelDelete}
         onConfirm={confirmDelete}
         loading={deleting}
       />

@@ -26,8 +26,10 @@ export default function AccountsCard({
   const [editingId, setEditingId] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [pendingDeleteAccount, setPendingDeleteAccount] = useState(null);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -78,9 +80,12 @@ export default function AccountsCard({
   async function confirmDeleteTransfer() {
     if (!pendingDelete) return;
     setDeleting(true);
+    setDeleteError('');
     try {
       await onDeleteTransfer(pendingDelete.id);
       setPendingDelete(null);
+    } catch (err) {
+      setDeleteError(err.message || 'Gagal menghapus transfer');
     } finally {
       setDeleting(false);
     }
@@ -89,9 +94,12 @@ export default function AccountsCard({
   async function confirmDeleteAccount() {
     if (!pendingDeleteAccount) return;
     setDeletingAccount(true);
+    setDeleteAccountError('');
     try {
       await onDelete(pendingDeleteAccount.id);
       setPendingDeleteAccount(null);
+    } catch (err) {
+      setDeleteAccountError(err.message || 'Gagal menghapus rekening');
     } finally {
       setDeletingAccount(false);
     }
@@ -335,7 +343,10 @@ export default function AccountsCard({
                       {formatRupiah(a.balance)}
                     </span>
                     <button
-                      onClick={() => setPendingDeleteAccount(a)}
+                      onClick={() => {
+                        setDeleteAccountError('');
+                        setPendingDeleteAccount(a);
+                      }}
                       className="text-slate-400 transition-colors hover:text-rose-600"
                       title="Hapus"
                       aria-label={`Hapus rekening ${a.name}`}
@@ -390,7 +401,10 @@ export default function AccountsCard({
                     <Pencil className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => setPendingDelete(t)}
+                    onClick={() => {
+                      setDeleteError('');
+                      setPendingDelete(t);
+                    }}
                     className="text-slate-400 transition-colors hover:text-rose-600"
                     title="Hapus transfer"
                     aria-label={`Hapus transfer ${accountName(t.from_account_id)} ke ${accountName(t.to_account_id)}`}
@@ -408,7 +422,11 @@ export default function AccountsCard({
         open={!!pendingDeleteAccount}
         title="Hapus rekening?"
         message={`Rekening "${pendingDeleteAccount?.name ?? ''}" akan dipindah ke recycle bin (bisa dipulihkan 30 hari). Transaksi tetap tersimpan.`}
-        onCancel={() => setPendingDeleteAccount(null)}
+        error={deleteAccountError}
+        onCancel={() => {
+          setPendingDeleteAccount(null);
+          setDeleteAccountError('');
+        }}
         onConfirm={confirmDeleteAccount}
         loading={deletingAccount}
       />
@@ -419,7 +437,11 @@ export default function AccountsCard({
         message={`Transfer ${formatRupiah(pendingDelete?.amount ?? 0)} dari ${accountName(
           pendingDelete?.from_account_id
         )} ke ${accountName(pendingDelete?.to_account_id)} akan dipindah ke recycle bin (bisa dipulihkan 30 hari).`}
-        onCancel={() => setPendingDelete(null)}
+        error={deleteError}
+        onCancel={() => {
+          setPendingDelete(null);
+          setDeleteError('');
+        }}
         onConfirm={confirmDeleteTransfer}
         loading={deleting}
       />

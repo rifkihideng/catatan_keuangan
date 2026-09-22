@@ -1,7 +1,7 @@
 import { useId } from 'react';
 import { useModalA11y } from '../useModalA11y';
 
-export default function ConfirmDialog({ open, title, message, onCancel, onConfirm, loading }) {
+export default function ConfirmDialog({ open, title, message, error, onCancel, onConfirm, loading }) {
   const titleId = useId();
   // capture: true → Escape hanya menutup konfirmasi ini, bukan dialog induknya
   const panelRef = useModalA11y(open, onCancel, { capture: true });
@@ -21,6 +21,14 @@ export default function ConfirmDialog({ open, title, message, onCancel, onConfir
       >
         <h3 id={titleId} className="font-semibold text-slate-800">{title}</h3>
         <p className="mt-1 text-sm text-slate-500">{message}</p>
+        {error && (
+          <p
+            role="alert"
+            className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+          >
+            {error}
+          </p>
+        )}
         <div className="mt-4 flex justify-end gap-2">
           <button
             onClick={onCancel}

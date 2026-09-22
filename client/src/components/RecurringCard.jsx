@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Power, Plus, Repeat, Trash2 } from 'lucide-react';
 import { formatRupiah, todayLocal } from '../format';
+import ConfirmDialog from './ConfirmDialog';
 
 const FREQ_LABEL = { daily: 'Harian', weekly: 'Mingguan', monthly: 'Bulanan' };
 
@@ -15,6 +16,31 @@ export default function RecurringCard({ recurring = [], accounts = [], onAdd, on
   const [accountId, setAccountId] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function toggleActive(r) {
+    setError('');
+    try {
+      await onToggle(r.id, !r.active);
+    } catch (err) {
+      setError(err.message || 'Gagal mengubah status transaksi berulang');
+    }
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setError('');
+    try {
+      await onDelete(pendingDelete.id);
+      setPendingDelete(null);
+    } catch (err) {
+      setError(err.message || 'Gagal menghapus transaksi berulang');
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function submit(e) {
     e.preventDefault();
@@ -67,6 +93,15 @@ export default function RecurringCard({ recurring = [], accounts = [], onAdd, on
           <Plus className="h-3.5 w-3.5" /> {showForm ? 'Batal' : 'Tambah'}
         </button>
       </div>
+
+      {error && (
+        <p
+          role="alert"
+          className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+        >
+          {error}
+        </p>
+      )}
 
       {showForm && (
         <form onSubmit={submit} className="mb-4 space-y-2 rounded-xl bg-slate-100 p-3 dark:bg-slate-900">
@@ -145,7 +180,6 @@ export default function RecurringCard({ recurring = [], accounts = [], onAdd, on
               </option>
             ))}
           </select>
-          {error && <p className="text-xs text-rose-600">{error}</p>}
           <button type="submit" disabled={busy} className="btn btn-primary w-full py-2">
             {busy ? '...' : 'Simpan'}
           </button>
@@ -180,7 +214,7 @@ export default function RecurringCard({ recurring = [], accounts = [], onAdd, on
               <div className="flex shrink-0 items-center gap-2">
                 {dueBadge(r)}
                 <button
-                  onClick={() => onToggle(r.id, !r.active)}
+                  onClick={() => toggleActive(r)}
                   className={`p-1 transition-colors ${
                     r.active
                       ? 'text-emerald-600 hover:text-emerald-700'
@@ -192,7 +226,10 @@ export default function RecurringCard({ recurring = [], accounts = [], onAdd, on
                   <Power className="h-4 w-4" />
                 </button>
                 <button
-                  onClick={() => onDelete(r.id)}
+                  onClick={() => {
+                    setError('');
+                    setPendingDelete(r);
+                  }}
                   className="p-1 text-slate-400 transition-colors hover:text-rose-600"
                   title="Hapus"
                   aria-label={`Hapus transaksi berulang ${r.category || 'tanpa kategori'}`}
@@ -204,6 +241,17 @@ export default function RecurringCard({ recurring = [], accounts = [], onAdd, on
           ))}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="Hapus transaksi berulang?"
+        message={`"${pendingDelete?.category || 'Tanpa kategori'}" sebesar ${formatRupiah(
+          pendingDelete?.amount ?? 0
+        )} akan dipindah ke recycle bin (bisa dipulihkan 30 hari).`}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+      />
     </div>
   );
 }
