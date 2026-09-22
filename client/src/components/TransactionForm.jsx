@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Minus, Pencil, Plus } from 'lucide-react';
 import { addCategory, getCategories } from '../api';
+import CategoryManager from './CategoryManager';
 
 const FALLBACK = { income: ['Lainnya'], expense: ['Lainnya'] };
 
@@ -17,11 +18,16 @@ export default function TransactionForm({ onAdd, onUpdate, editing, onCancelEdit
   const [loading, setLoading] = useState(false);
   const [showAddCat, setShowAddCat] = useState(false);
   const [newCat, setNewCat] = useState('');
+  const [showManager, setShowManager] = useState(false);
 
-  useEffect(() => {
+  function refreshCategories() {
     getCategories()
       .then((c) => setCats(c))
       .catch(() => {});
+  }
+
+  useEffect(() => {
+    refreshCategories();
   }, []);
 
   // Isi form saat mode edit
@@ -157,13 +163,22 @@ export default function TransactionForm({ onAdd, onUpdate, editing, onCancelEdit
       <div>
         <div className="mb-1 flex items-center justify-between">
           <label className="label mb-0">Kategori</label>
-          <button
-            type="button"
-            onClick={() => setShowAddCat((s) => !s)}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-          >
-            <Plus className="h-3.5 w-3.5" /> Baru
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowManager(true)}
+              className="inline-flex items-center text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+            >
+              Kelola
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAddCat((s) => !s)}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+            >
+              <Plus className="h-3.5 w-3.5" /> Baru
+            </button>
+          </div>
         </div>
         <select
           value={category}
@@ -247,6 +262,12 @@ export default function TransactionForm({ onAdd, onUpdate, editing, onCancelEdit
           </button>
         )}
       </div>
+
+      <CategoryManager
+        open={showManager}
+        onClose={() => setShowManager(false)}
+        onChanged={refreshCategories}
+      />
     </form>
   );
 }

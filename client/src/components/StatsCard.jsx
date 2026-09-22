@@ -20,7 +20,9 @@ export default function StatsCard({ stats }) {
           <p className="mt-0.5 truncate text-xl font-bold text-slate-800 lg:text-2xl" title={formatRupiah(avg)}>
             {formatRupiahCompact(avg)}
           </p>
-          <p className="text-xs text-slate-400">bulan ini</p>
+          <p className="text-xs text-slate-400">
+            {s.daysElapsed ? `dari ${s.daysElapsed} hari berjalan` : 'bulan ini'}
+          </p>
         </>
       ),
     },

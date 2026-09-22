@@ -40,6 +40,11 @@ export const updateTransaction = (id, data) =>
 
 export const getCategories = () => request('/categories');
 
+export const getCategoryDetails = () => request('/categories/detail');
+
+export const updateCategory = (id, name) =>
+  request(`/categories/${id}`, { method: 'PUT', body: JSON.stringify({ name }) });
+
 export const addCategory = (data) =>
   request('/categories', { method: 'POST', body: JSON.stringify(data) });
 

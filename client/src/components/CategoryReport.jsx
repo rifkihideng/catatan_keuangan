@@ -1,8 +1,13 @@
-import { BarChart3 } from 'lucide-react';
+import { useState } from 'react';
+import { BarChart3, X } from 'lucide-react';
 import { formatRupiahCompact } from '../format';
 
 export default function CategoryReport({ data = [] }) {
-  const rows = Array.isArray(data) ? data : [];
+  const [fromMonth, setFromMonth] = useState('');
+  const [toMonth, setToMonth] = useState('');
+  const rows = (Array.isArray(data) ? data : []).filter(
+    (r) => (!fromMonth || r.month >= fromMonth) && (!toMonth || r.month <= toMonth)
+  );
 
   const months = [...new Set(rows.map((r) => r.month))].sort();
   const categories = [...new Set(rows.map((r) => r.category))].sort((a, b) =>
@@ -21,15 +26,47 @@ export default function CategoryReport({ data = [] }) {
   const grandTotal = Object.values(monthTotals).reduce((s, v) => s + v, 0);
 
   const header = (
-    <div className="mb-4 flex items-center gap-2">
-      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400">
-        <BarChart3 className="h-5 w-5" />
-      </span>
-      <div>
-        <h2 className="text-base font-bold text-slate-900 dark:text-white">
-          Laporan Pengeluaran per Kategori
-        </h2>
-        <p className="text-xs text-slate-400">Pengeluaran per kategori dari waktu ke waktu</p>
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400">
+          <BarChart3 className="h-5 w-5" />
+        </span>
+        <div>
+          <h2 className="text-base font-bold text-slate-900 dark:text-white">
+            Laporan Pengeluaran per Kategori
+          </h2>
+          <p className="text-xs text-slate-400">Pengeluaran per kategori dari waktu ke waktu</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 print:hidden">
+        <input
+          type="month"
+          value={fromMonth}
+          onChange={(e) => setFromMonth(e.target.value)}
+          className="w-36 rounded-xl border border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+          title="Dari bulan"
+        />
+        <span className="text-xs text-slate-400">–</span>
+        <input
+          type="month"
+          value={toMonth}
+          onChange={(e) => setToMonth(e.target.value)}
+          className="w-36 rounded-xl border border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+          title="Sampai bulan"
+        />
+        {(fromMonth || toMonth) && (
+          <button
+            type="button"
+            onClick={() => {
+              setFromMonth('');
+              setToMonth('');
+            }}
+            className="rounded-xl border border-slate-300 px-2 py-1.5 text-sm text-slate-500 transition-colors hover:bg-slate-50"
+            title="Reset periode"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -40,7 +77,11 @@ export default function CategoryReport({ data = [] }) {
         {header}
         <div className="flex flex-col items-center gap-2 py-10 text-center text-slate-400">
           <BarChart3 className="h-8 w-8" />
-          <p className="text-sm">Belum ada data pengeluaran</p>
+          <p className="text-sm">
+            {fromMonth || toMonth
+              ? 'Tidak ada pengeluaran untuk periode ini'
+              : 'Belum ada data pengeluaran'}
+          </p>
         </div>
       </div>
     );

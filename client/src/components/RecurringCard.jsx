@@ -177,7 +177,8 @@ export default function RecurringCard({ recurring = [], accounts = [], onAdd, on
                   })}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-1">
+              <div className="flex shrink-0 items-center gap-2">
+                {dueBadge(r)}
                 <button
                   onClick={() => onToggle(r.id, !r.active)}
                   className={`p-1 transition-colors ${
@@ -203,4 +204,39 @@ export default function RecurringCard({ recurring = [], accounts = [], onAdd, on
       )}
     </div>
   );
+}
+
+function dueBadge(r) {
+  if (!r.active) return null;
+  const d = daysUntil(r.next_date);
+  if (d < 0) {
+    return (
+      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:bg-rose-950/60 dark:text-rose-300">
+        Terlambat {-d} hari
+      </span>
+    );
+  }
+  if (d === 0) {
+    return (
+      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+        Hari ini
+      </span>
+    );
+  }
+  if (d <= 3) {
+    return (
+      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+        {d} hari lagi
+      </span>
+    );
+  }
+  return null;
+}
+
+function daysUntil(dateStr) {
+  const [y, m, d] = String(dateStr).split('-').map(Number);
+  const target = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((target - today) / 86400000);
 }

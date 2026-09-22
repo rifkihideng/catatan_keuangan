@@ -207,12 +207,56 @@ app.post('/api/categories', (req, res) => {
   }
 });
 
-// Hapus kategori
-app.delete('/api/categories/:id', (req, res) => {
-  const result = db.prepare('DELETE FROM categories WHERE id = ?').run(req.params.id);
-  if (Number(result.changes) === 0) {
+// Ganti nama kategori (termasuk semua transaksi yang memakainya)
+app.put('/api/categories/:id', (req, res) => {
+  const { name } = req.body ?? {};
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) {
+    return res.status(400).json({ error: 'Nama kategori wajib diisi' });
+  }
+  const cat = db.prepare('SELECT * FROM categories WHERE id = ?').get(req.params.id);
+  if (!cat) {
     return res.status(404).json({ error: 'Kategori tidak ditemukan' });
   }
+  if (cat.name === trimmed) {
+    return res.json({ id: cat.id, type: cat.type, name: trimmed });
+  }
+  try {
+    db.exec('BEGIN');
+    db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(trimmed, cat.id);
+    db.prepare('UPDATE transactions SET category = ? WHERE category = ?').run(trimmed, cat.name);
+    db.prepare('UPDATE recurring SET category = ? WHERE category = ?').run(trimmed, cat.name);
+    db.prepare('UPDATE category_budgets SET category = ? WHERE category = ?').run(trimmed, cat.name);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    if (String(err.message).includes('UNIQUE')) {
+      return res.status(409).json({ error: 'Kategori sudah ada' });
+    }
+    throw err;
+  }
+  res.json({ id: cat.id, type: cat.type, name: trimmed });
+});
+
+// Daftar kategori lengkap dengan id (untuk kelola kategori)
+app.get('/api/categories/detail', (req, res) => {
+  const rows = db.prepare('SELECT id, type, name FROM categories ORDER BY type, id').all();
+  res.json({
+    income: rows.filter((r) => r.type === 'income'),
+    expense: rows.filter((r) => r.type === 'expense'),
+  });
+});
+
+// Hapus kategori
+app.delete('/api/categories/:id', (req, res) => {
+  const cat = db.prepare('SELECT * FROM categories WHERE id = ?').get(req.params.id);
+  if (!cat) {
+    return res.status(404).json({ error: 'Kategori tidak ditemukan' });
+  }
+  db.exec('BEGIN');
+  db.prepare('DELETE FROM category_budgets WHERE category = ?').run(cat.name);
+  db.prepare('DELETE FROM categories WHERE id = ?').run(cat.id);
+  db.exec('COMMIT');
   res.json({ ok: true });
 });
 
@@ -697,7 +741,7 @@ app.get('/api/summary', (req, res) => {
     .prepare(
       `SELECT COALESCE(SUM(amount), 0) AS total
        FROM transactions
-       WHERE type = 'expense' AND deleted_at IS NULL AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')`
+       WHERE type = 'expense' AND deleted_at IS NULL AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime')`
     )
     .get().total;
 
@@ -711,14 +755,14 @@ app.get('/api/summary', (req, res) => {
     .prepare(
       `SELECT COALESCE(NULLIF(category, ''), 'Tanpa kategori') AS category, SUM(amount) AS total
        FROM transactions
-       WHERE type = 'expense' AND deleted_at IS NULL AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
+       WHERE type = 'expense' AND deleted_at IS NULL AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime')
        GROUP BY category`
     )
     .all();
 
   // Statistik tambahan
   const daysElapsed =
-    Number(db.prepare("SELECT CAST(strftime('%d', 'now') AS INTEGER) AS d").get().d) || 1;
+    Number(db.prepare("SELECT CAST(strftime('%d', 'now', 'localtime') AS INTEGER) AS d").get().d) || 1;
   const avgDailyExpense = monthExpense / daysElapsed;
 
   const largestTransaction =
@@ -726,7 +770,7 @@ app.get('/api/summary', (req, res) => {
       .prepare(
         `SELECT amount, category, description, date, type
          FROM transactions
-         WHERE deleted_at IS NULL AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
+         WHERE deleted_at IS NULL AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime')
          ORDER BY amount DESC
          LIMIT 1`
       )
@@ -735,8 +779,8 @@ app.get('/api/summary', (req, res) => {
   const trend = db
     .prepare(
       `SELECT
-        COALESCE(SUM(CASE WHEN strftime('%Y-%m', date) = strftime('%Y-%m', 'now') AND type = 'expense' THEN amount ELSE 0 END), 0) AS current,
-        COALESCE(SUM(CASE WHEN strftime('%Y-%m', date) = strftime('%Y-%m', 'now', '-1 month') AND type = 'expense' THEN amount ELSE 0 END), 0) AS last
+        COALESCE(SUM(CASE WHEN strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime') AND type = 'expense' THEN amount ELSE 0 END), 0) AS current,
+        COALESCE(SUM(CASE WHEN strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime', '-1 month') AND type = 'expense' THEN amount ELSE 0 END), 0) AS last
       FROM transactions
       WHERE deleted_at IS NULL`
     )
@@ -773,6 +817,7 @@ app.get('/api/summary', (req, res) => {
     balanceTrend,
     stats: {
       avgDailyExpense,
+      daysElapsed,
       largestTransaction,
       trend: { current: trend.current, last: trend.last },
     },

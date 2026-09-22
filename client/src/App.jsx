@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
   CircleAlert,
+  Clock,
   DatabaseBackup,
   Download,
+  Monitor,
   Moon,
   Printer,
   RotateCcw,
@@ -39,6 +41,7 @@ import {
   updateTransfer,
 } from './api';
 import SummaryCards from './components/SummaryCards';
+import LoadingScreen from './components/LoadingScreen';
 import TransactionForm from './components/TransactionForm';
 import TransactionList from './components/TransactionList';
 import MonthlyChart from './components/MonthlyChart';
@@ -81,13 +84,35 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const restoreInputRef = useRef(null);
   const importInputRef = useRef(null);
-  const [theme, setTheme] = useState('light');
+  const [theme, setTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem('theme');
+      if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
+    } catch {}
+    return 'system';
+  });
+  const [systemDark, setSystemDark] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
+  );
+  const effectiveTheme = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-  }, [theme]);
+    document.documentElement.classList.toggle('dark', effectiveTheme === 'dark');
+    try {
+      localStorage.setItem('theme', theme);
+    } catch {}
+  }, [effectiveTheme, theme]);
+
+  useEffect(() => {
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!mq) return;
+    const onChange = (e) => setSystemDark(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   const loadData = useCallback(async () => {
+    const startedAt = Date.now();
     try {
       const [tx, sum, accs, trfs, recs, cats, report] = await Promise.all([
         getTransactions({ month, from, to }),
@@ -109,7 +134,8 @@ export default function App() {
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      const wait = Math.max(0, 2200 - (Date.now() - startedAt));
+      setTimeout(() => setLoading(false), wait);
     }
   }, [month, from, to]);
 
@@ -322,6 +348,20 @@ export default function App() {
         ? monthLabel(month)
         : 'Semua data';
 
+  const dueReminders = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return recurring
+      .filter((r) => r.active && r.next_date)
+      .map((r) => ({ ...r, days: diffDays(today, r.next_date) }))
+      .filter((r) => r.days <= 3)
+      .sort((a, b) => a.days - b.days);
+  }, [recurring]);
+
+  if (loading) {
+    return <LoadingScreen />;
+  }
+
   return (
     <div className="min-h-screen text-slate-800 print:bg-white dark:bg-slate-950 dark:text-slate-200">
       <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl print:static print:border-none dark:border-slate-800 dark:bg-slate-900/80">
@@ -342,11 +382,25 @@ export default function App() {
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2 print:hidden">
               <button
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                onClick={() =>
+                  setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light')
+                }
                 className="btn btn-secondary px-2.5 py-2"
-                title="Ganti tema"
+                title={
+                  theme === 'light'
+                    ? 'Tema: Terang'
+                    : theme === 'dark'
+                      ? 'Tema: Gelap'
+                      : 'Tema: Otomatis (ikut sistem)'
+                }
               >
-                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {theme === 'light' ? (
+                  <Sun className="h-4 w-4" />
+                ) : theme === 'dark' ? (
+                  <Moon className="h-4 w-4" />
+                ) : (
+                  <Monitor className="h-4 w-4" />
+                )}
               </button>
               <button onClick={handleExportCSV} className="btn btn-secondary px-3 py-2">
                 <Download className="h-4 w-4" /> CSV
@@ -409,6 +463,27 @@ export default function App() {
           </div>
         )}
 
+        {dueReminders.length > 0 && (
+          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 print:hidden dark:border-amber-900/50 dark:bg-amber-950/50 dark:text-amber-300">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              {dueReminders.length} tagihan jatuh tempo:{' '}
+              {dueReminders
+                .map(
+                  (r) =>
+                    `${r.category || 'Tanpa kategori'} ${
+                      r.days < 0
+                        ? `(terlambat ${-r.days} hari)`
+                        : r.days === 0
+                          ? '(hari ini)'
+                          : `(${r.days} hari lagi)`
+                    }`
+                )
+                .join(', ')}
+            </span>
+          </div>
+        )}
+
         <SummaryCards summary={totals} periodLabel={periodLabel} />
 
         <div className="print:hidden">
@@ -437,7 +512,11 @@ export default function App() {
           <div className="lg:col-span-2">
             <CategoryReport data={categoryReport} />
           </div>
-          <SavingsRateCard income={summary.income} expense={summary.expense} />
+          <SavingsRateCard
+            income={summary.income}
+            expense={summary.expense}
+            monthly={summary.monthly || []}
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -506,6 +585,12 @@ function monthLabel(m) {
 function shortDate(d) {
   const [y, mo, day] = d.split('-');
   return `${Number(day)}/${Number(mo)}/${y}`;
+}
+
+function diffDays(fromDate, dateStr) {
+  const [y, m, d] = String(dateStr).split('-').map(Number);
+  const target = new Date(y, m - 1, d);
+  return Math.round((target - fromDate) / 86400000);
 }
 
 function parseCSV(text) {

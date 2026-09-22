@@ -4,8 +4,12 @@ import { formatRupiah, formatRupiahCompact } from '../format';
 const R = 34;
 const CIRC = 2 * Math.PI * R;
 
-export default function SavingsRateCard({ income = 0, expense = 0 }) {
+export default function SavingsRateCard({ income = 0, expense = 0, monthly = [] }) {
   const incomeN = Number(income) || 0;
+  const recentMonths = (Array.isArray(monthly) ? monthly : [])
+    .slice()
+    .sort((a, b) => (a.month < b.month ? 1 : -1))
+    .slice(0, 6);
   const expenseN = Number(expense) || 0;
   const savings = incomeN - expenseN;
   const rate = incomeN > 0 ? (savings / incomeN) * 100 : null;
@@ -79,6 +83,43 @@ export default function SavingsRateCard({ income = 0, expense = 0 }) {
         </div>
       </div>
 
+      {recentMonths.length > 0 && (
+        <div className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-700">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Per bulan
+          </h3>
+          <ul className="space-y-1.5">
+            {recentMonths.map((m) => {
+              const mRate = m.income > 0 ? ((m.income - m.expense) / m.income) * 100 : null;
+              return (
+                <li key={m.month} className="flex items-center gap-2 text-xs">
+                  <span className="w-16 shrink-0 font-medium text-slate-500 dark:text-slate-300">
+                    {monthShort(m.month)}
+                  </span>
+                  <span className="flex-1 tabular-nums text-emerald-600">
+                    +{formatRupiahCompact(m.income)}
+                  </span>
+                  <span className="flex-1 tabular-nums text-rose-600">
+                    −{formatRupiahCompact(m.expense)}
+                  </span>
+                  <span
+                    className={`w-10 shrink-0 text-right font-semibold tabular-nums ${
+                      mRate === null
+                        ? 'text-slate-400'
+                        : m.income >= m.expense
+                          ? 'text-emerald-600'
+                          : 'text-rose-600'
+                    }`}
+                  >
+                    {mRate === null ? '—' : `${Math.abs(mRate).toFixed(0)}%`}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       <div className="mt-auto pt-4">
         <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
           <div className="bg-emerald-500" style={{ width: `${incomePct}%` }} />
@@ -104,4 +145,12 @@ export default function SavingsRateCard({ income = 0, expense = 0 }) {
       </div>
     </div>
   );
+}
+
+function monthShort(m) {
+  const [y, mo] = m.split('-');
+  return new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString('id-ID', {
+    month: 'short',
+    year: 'numeric',
+  });
 }
