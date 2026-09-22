@@ -1,6 +1,6 @@
 # 💰 Catatan Keuangan Pribadi
 
-Aplikasi pencatat keuangan sederhana: pemasukan & pengeluaran, ringkasan saldo, dan grafik bulanan.
+Aplikasi pencatat keuangan pribadi: pemasukan & pengeluaran, anggaran, multi-rekening, laporan per kategori, dan cadangan data otomatis.
 
 ## Teknologi
 - **Frontend**: Vite + React 19 + Tailwind CSS v4 + Recharts
@@ -32,48 +32,75 @@ npm run dev
 Buka http://localhost:5173 di browser.
 
 ## Fitur
-- Tambah, edit, dan hapus transaksi (pemasukan / pengeluaran) dengan kategori, tanggal, dan keterangan.
-- Konfirmasi sebelum hapus transaksi.
-- Pencarian transaksi (berdasarkan kategori / keterangan).
-- Kategori custom: tambahkan kategori sendiri.
+
+### Transaksi & pencatatan
+- Tambah, edit, dan hapus transaksi (pemasukan/pengeluaran) dengan kategori, tanggal, keterangan, dan rekening.
+- Pencarian, filter kategori, filter bulan/rentang tanggal (bisa satu sisi), dan urutkan (tanggal/nominal/kategori).
+- Import dari CSV dan export ke CSV/PDF.
+
+### Kategori
+- Tambah kategori baru.
+- Ganti nama kategori (otomatis memperbarui semua transaksi, transaksi berulang, dan anggaran yang memakainya).
+- Hapus kategori.
+
+### Anggaran & target
 - Anggaran bulanan dengan progress bar & peringatan saat melebihi.
 - Anggaran per kategori dengan progress bar masing-masing.
-- Statistik: rata-rata pengeluaran harian, transaksi terbesar, tren bulan ini vs bulan lalu.
-- Multi-rekening (cash / bank / e-wallet) dengan transfer antar rekening.
-- Riwayat transfer: edit & hapus transfer.
-- Kartu ringkasan: saldo, total pemasukan, total pengeluaran (mengikuti filter).
-- Grafik batang pemasukan vs pengeluaran per bulan.
-- Pie chart rincian pengeluaran/pemasukan per kategori.
-- Grafik tren saldo kumulatif dari waktu ke waktu.
 - Target tabungan dengan progress pencapaian.
-- Filter riwayat transaksi per bulan atau rentang tanggal bebas.
-- Export CSV & PDF.
+
+### Rekening, transfer & transaksi berulang
+- Multi-rekening (tunai/bank/e-wallet) dengan saldo otomatis.
+- Transfer antar rekening beserta riwayatnya (edit & hapus).
+- Transaksi berulang (harian/mingguan/bulanan) dengan pengingat jatuh tempo.
+
+### Laporan & analisis
+- Kartu ringkasan: saldo, pemasukan, dan pengeluaran (mengikuti filter).
+- Statistik: rata-rata pengeluaran harian, transaksi terbesar, tren bulan ini vs bulan lalu.
+- Laporan pengeluaran per kategori per bulan (bisa dibatasi rentang bulan).
+- Kartu pemasukan vs pengeluaran: persentase tabungan total & per bulan.
+- Grafik: batang bulanan, pie per kategori, tren saldo kumulatif.
+
+### Data & keamanan
+- Recycle bin 30 hari: transaksi, transaksi berulang, transfer, dan rekening yang terhapus bisa dipulihkan.
 - Backup & restore seluruh data ke file JSON.
-- Data tersimpan permanen di database SQLite.
+- Backup otomatis file database ke `server/backups/` (setiap 6 jam, menyimpan 14 salinan terakhir).
+- Mode tema terang/gelap/otomatis (mengikuti sistem).
 
 ## API
-| Method | Endpoint                  | Keterangan                                    |
-| ------ | ------------------------- | --------------------------------------------- |
-| GET    | `/api/transactions`       | Semua transaksi (`?month=YYYY-MM` atau `?from=&to=` untuk filter) |
-| POST   | `/api/transactions`       | Tambah transaksi                              |
-| PUT    | `/api/transactions/:id`   | Edit transaksi                                |
-| DELETE | `/api/transactions/:id`   | Hapus transaksi                               |
-| GET    | `/api/summary`            | Ringkasan, saldo, anggaran, target tabungan, tren saldo & data per bulan |
-| GET    | `/api/categories`         | Daftar kategori                                |
-| POST   | `/api/categories`         | Tambah kategori                                |
-| DELETE | `/api/categories/:id`     | Hapus kategori                                 |
-| GET    | `/api/budget`             | Ambil anggaran bulanan                         |
-| PUT    | `/api/budget`             | Simpan anggaran bulanan                        |
-| PUT    | `/api/category-budgets`           | Simpan anggaran per kategori          |
-| DELETE | `/api/category-budgets/:category` | Hapus anggaran per kategori          |
-| GET    | `/api/savings-goal`               | Ambil target tabungan                  |
-| PUT    | `/api/savings-goal`               | Simpan target tabungan                 |
-| GET    | `/api/accounts`                   | Daftar rekening                        |
-| POST   | `/api/accounts`                   | Tambah rekening                        |
-| DELETE | `/api/accounts/:id`               | Hapus rekening                         |
-| GET    | `/api/transfers`                  | Riwayat transfer                       |
-| POST   | `/api/transfers`                  | Transfer antar rekening                |
-| PUT    | `/api/transfers/:id`              | Edit transfer                          |
-| DELETE | `/api/transfers/:id`              | Hapus transfer                         |
-| GET    | `/api/backup`                     | Export seluruh data (JSON)             |
-| POST   | `/api/restore`                    | Import seluruh data dari backup JSON   |
+| Method | Endpoint | Keterangan |
+| ------ | -------- | ---------- |
+| GET    | `/api/transactions` | Semua transaksi (`?month=YYYY-MM` atau `?from=&to=`) |
+| POST   | `/api/transactions` | Tambah transaksi |
+| PUT    | `/api/transactions/:id` | Edit transaksi |
+| DELETE | `/api/transactions/:id` | Hapus transaksi (soft delete → recycle bin) |
+| POST   | `/api/transactions/import` | Import transaksi dari CSV |
+| GET    | `/api/summary` | Ringkasan, anggaran, target, tren & data per bulan |
+| GET    | `/api/reports/category-monthly` | Laporan pengeluaran per kategori per bulan |
+| GET    | `/api/categories` | Daftar kategori (nama) |
+| GET    | `/api/categories/detail` | Daftar kategori lengkap dengan id |
+| POST   | `/api/categories` | Tambah kategori |
+| PUT    | `/api/categories/:id` | Ganti nama kategori (ikut memperbarui transaksi) |
+| DELETE | `/api/categories/:id` | Hapus kategori |
+| GET    | `/api/budget` | Ambil anggaran bulanan |
+| PUT    | `/api/budget` | Simpan anggaran bulanan |
+| PUT    | `/api/category-budgets` | Simpan anggaran per kategori |
+| DELETE | `/api/category-budgets/:category` | Hapus anggaran per kategori |
+| GET    | `/api/savings-goal` | Ambil target tabungan |
+| PUT    | `/api/savings-goal` | Simpan target tabungan |
+| GET    | `/api/accounts` | Daftar rekening + saldo |
+| POST   | `/api/accounts` | Tambah rekening |
+| DELETE | `/api/accounts/:id` | Hapus rekening (soft delete) |
+| GET    | `/api/transfers` | Riwayat transfer |
+| POST   | `/api/transfers` | Transfer antar rekening |
+| PUT    | `/api/transfers/:id` | Edit transfer |
+| DELETE | `/api/transfers/:id` | Hapus transfer (soft delete) |
+| GET    | `/api/recurring` | Daftar transaksi berulang |
+| POST   | `/api/recurring` | Tambah transaksi berulang |
+| PUT    | `/api/recurring/:id` | Aktif/nonaktifkan transaksi berulang |
+| DELETE | `/api/recurring/:id` | Hapus transaksi berulang (soft delete) |
+| GET    | `/api/trash` | Daftar item recycle bin |
+| POST   | `/api/trash/:entity/:id/restore` | Pulihkan item (`transaction\|recurring\|transfer\|account`) |
+| DELETE | `/api/trash/:entity/:id` | Hapus permanen satu item |
+| DELETE | `/api/trash` | Kosongkan recycle bin |
+| GET    | `/api/backup` | Export seluruh data (JSON) |
+| POST   | `/api/restore` | Import seluruh data dari backup JSON |
