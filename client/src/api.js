@@ -1,16 +1,105 @@
 const BASE = '/api';
+const TOKEN_KEY = 'auth_token';
 
-async function request(url, options = {}) {
-  const res = await fetch(`${BASE}${url}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+// Dipicu saat server menolak token (401) agar App bisa menampilkan layar masuk.
+export const AUTH_UNAUTHORIZED_EVENT = 'auth:unauthorized';
+
+let token = null;
+try {
+  token = localStorage.getItem(TOKEN_KEY) || null;
+} catch {
+  token = null;
+}
+
+export function getToken() {
+  return token;
+}
+
+export function setToken(value) {
+  token = value || null;
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // localStorage bisa diblokir (mode privat) — sesi tetap berlaku sampai tab ditutup
+  }
+}
+
+export function clearToken() {
+  setToken(null);
+}
+
+async function request(url, options = {}, handleUnauthorized = true) {
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let res;
+  try {
+    res = await fetch(`${BASE}${url}`, { ...options, headers });
+  } catch {
+    throw new Error('Tidak dapat terhubung ke server');
+  }
+
+  if (res.status === 401 && handleUnauthorized) {
+    const err = await res.json().catch(() => ({}));
+    clearToken();
+    window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+    throw new Error(err.error || 'Sesi berakhir, silakan masuk kembali');
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Terjadi kesalahan');
+    const error = new Error(err.error || 'Terjadi kesalahan');
+    // Kode khusus dari server, mis. 'email_unverified'
+    if (err.code) error.code = err.code;
+    throw error;
   }
+  if (res.status === 204) return null;
   return res.json();
 }
+
+// --- Autentikasi ---
+
+// handleUnauthorized=false: kegagalan login bukan "sesi kadaluarsa".
+export const login = (email, password, remember = false) =>
+  request(
+    '/auth/login',
+    { method: 'POST', body: JSON.stringify({ email, password, remember }) },
+    false
+  );
+
+export const register = ({ email, name, password }) =>
+  request('/auth/register', { method: 'POST', body: JSON.stringify({ email, name, password }) }, false);
+
+export const logout = () => request('/auth/logout', { method: 'POST' });
+
+export const getMe = () => request('/auth/me');
+
+export const changePassword = (currentPassword, newPassword) =>
+  request('/auth/password', {
+    method: 'PUT',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+
+// Konfigurasi publik layar masuk (login Google, pendaftaran, pengiriman email)
+export const getAuthConfig = () => request('/auth/config', {}, false);
+
+export const forgotPassword = (email) =>
+  request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }, false);
+
+export const checkResetToken = (token) =>
+  request(`/auth/reset-password/${encodeURIComponent(token)}`, {}, false);
+
+export const resetPassword = (token, password) =>
+  request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) }, false);
+
+export const verifyEmail = (token) =>
+  request('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) }, false);
+
+export const resendVerification = () => request('/auth/resend-verification', { method: 'POST' });
+
+export const exchangeGoogleCode = (code) =>
+  request('/auth/google/exchange', { method: 'POST', body: JSON.stringify({ code }) }, false);
 
 export const getTransactions = ({ month, from, to } = {}) => {
   const params = new URLSearchParams();

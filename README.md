@@ -33,6 +33,44 @@ npm run dev
 ```
 Buka http://localhost:5173 di browser.
 
+> Saat pertama kali dibuka, aplikasi menampilkan layar **Masuk / Daftar**. Buat akun terlebih dahulu — akun pertama akan otomatis mewarisi data yang sudah ada di database sebelum fitur multi-user ini aktif.
+
+## Konfigurasi (opsional)
+
+Backend membaca variabel lingkungan berikut:
+
+| Variabel | Default | Fungsi |
+| -------- | ------- | ------ |
+| `PORT` | `3001` | Port server Express. |
+| `FINANCE_DB_PATH` | `server/finance.db` | Lokasi file database SQLite (mis. volume persisten di hosting). |
+| `ALLOW_SIGNUP` | `1` | Set `0` untuk menutup pendaftaran akun baru (mode undangan). |
+| `TRUST_PROXY` | – | Set `1` bila berjalan di belakang reverse proxy agar IP asli terbaca pembatas percobaan login. |
+| `PUBLIC_URL` | dari request | Alamat **server/API** ini. Dipakai untuk `redirect_uri` Google dan sebagai cadangan alamat frontend. |
+| `APP_URL` | ikut `PUBLIC_URL` | Alamat **frontend**. Isi bila client & server di host berbeda (mis. client di Vercel, API di Render). |
+| `SESSION_HOURS` | `720` (30 hari) | Masa berlaku sesi saat **"Tetap masuk"** dicentang. |
+| `SESSION_SHORT_HOURS` | `12` | Masa berlaku sesi bila tidak dicentang. |
+| `RESEND_API_KEY` | – | Kunci API [Resend](https://resend.com) untuk mengirim email. Kosong = email dicetak ke log server. |
+| `EMAIL_FROM` | `Catatan Keuangan <no-reply@localhost>` | Pengirim email (domain harus terverifikasi di Resend). |
+| `APP_NAME` | `Catatan Keuangan` | Nama aplikasi pada subjek & isi email. |
+| `RESET_TOKEN_MINUTES` | `60` | Masa berlaku tautan reset password. |
+| `VERIFY_TOKEN_HOURS` | `24` | Masa berlaku tautan konfirmasi email. |
+| `REQUIRE_EMAIL_VERIFICATION` | `0` | Set `1` untuk mewajibkan konfirmasi email sebelum aplikasi bisa dipakai. Otomatis diabaikan bila email belum dikonfigurasi. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | – | Mengaktifkan tombol **Lanjutkan dengan Google**. |
+
+### Mengaktifkan pengiriman email (lupa password & konfirmasi email)
+1. Daftar di Resend, verifikasi domain pengirim, lalu buat API key.
+2. Set `RESEND_API_KEY`, `EMAIL_FROM`, dan `PUBLIC_URL` (mis. `https://api.domainku.com`).
+3. Bila client di host lain, set juga `APP_URL` (mis. `https://domainku.com`) supaya tautan di email mengarah ke frontend.
+
+Selama `RESEND_API_KEY` belum diisi, fitur tetap bisa dicoba: isi email (tautan reset/konfirmasi) dicetak pada log server, dan pemakai baru otomatis dianggap terverifikasi.
+
+### Mengaktifkan login Google
+1. Buat OAuth Client ID (tipe **Web application**) di Google Cloud Console.
+2. Daftarkan Authorized redirect URI: `<PUBLIC_URL>/api/auth/google/callback`.
+3. Set `GOOGLE_CLIENT_ID` dan `GOOGLE_CLIENT_SECRET` lalu jalankan ulang server.
+
+Tombol Google hanya muncul di layar masuk bila kedua variabel itu terisi. Akun Google akan ditautkan ke akun dengan email yang sama (email dari Google sudah terverifikasi), dan akun baru langsung mendapat kategori & rekening bawaan.
+
 ## Fitur
 
 ### Transaksi & pencatatan
@@ -62,16 +100,47 @@ Buka http://localhost:5173 di browser.
 - Kartu pemasukan vs pengeluaran: persentase tabungan total & per bulan.
 - Grafik: batang bulanan, pie per kategori, tren saldo kumulatif.
 
+### Akun & keamanan data
+- **Multi-user dengan isolasi data**: setiap transaksi, kategori, anggaran, rekening, transfer, transaksi berulang, dan pengaturan hanya bisa dilihat & diubah oleh pemiliknya.
+- **Masuk / Daftar** dengan email + password. Password disimpan sebagai hash **scrypt** (salt acak), bukan teks biasa.
+- **Lupa password**: kirim tautan reset lewat email (berlaku 60 menit, sekali pakai). Membuka tautan reset otomatis menandai email sebagai terverifikasi dan mencabut semua sesi lama.
+- **Konfirmasi email**: tautan verifikasi berlaku 24 jam; banner pengingat + tombol kirim ulang tampil di dashboard. Bisa diwajibkan dengan `REQUIRE_EMAIL_VERIFICATION=1`.
+- **Login dengan Google** (opsional, OAuth 2.0 + PKCE) dengan penautan akun berdasarkan email terverifikasi.
+- **"Tetap masuk"** untuk sesi panjang (30 hari); tanpa itu sesi berakhir dalam 12 jam. Keduanya bisa diatur lewat env.
+- Sesi login disimpan sebagai hash SHA-256 di server dan bisa dicabut kapan pun lewat tombol **Keluar**.
+- Ganti password dari API (`PUT /api/auth/password`) — sesi di perangkat lain otomatis dicabut.
+- Percobaan masuk yang gagal dibatasi (10 kali / 15 menit per IP+email); permintaan tautan reset dibatasi 5 kali / jam.
+- Respons lupa password selalu sama (tidak membocorkan apakah sebuah email terdaftar), dan pesan login tidak membedakan email salah vs password salah.
+- Akun baru langsung mendapat kategori dan rekening bawaan sendiri.
+
 ### Data & keamanan
 - Recycle bin 30 hari: transaksi, transaksi berulang, transfer, dan rekening yang terhapus bisa dipulihkan.
-- Backup & restore seluruh data ke file JSON.
+- Backup & restore seluruh data ke file JSON (per akun — restore tidak menyentuh data pengguna lain).
 - Backup otomatis file database ke `server/backups/` (setiap 6 jam, menyimpan 14 salinan terakhir).
 - Mode tema terang/gelap/otomatis (mengikuti sistem).
 
 ## API
+
+Semua endpoint di bawah `/api` (kecuali `/api/auth/register`, `/api/auth/login`, dan `/api/health`) membutuhkan header `Authorization: Bearer <token>`. Data yang dikembalikan selalu hanya milik pengguna tersebut.
+
 | Method | Endpoint | Keterangan |
 | ------ | -------- | ---------- |
-| GET    | `/api/transactions` | Semua transaksi (`?month=YYYY-MM` atau `?from=&to=`) |
+| GET    | `/api/health` | Cek status server |
+| GET    | `/api/auth/config` | Konfigurasi publik: pendaftaran, Google, email, syarat password |
+| POST   | `/api/auth/register` | Daftar akun baru (`email`, `name`, `password` ≥ 8 karakter) |
+| POST   | `/api/auth/login` | Masuk (`remember: true` untuk sesi panjang), mengembalikan `token` + `user` |
+| POST   | `/api/auth/logout` | Keluar (mencabut token yang dipakai) |
+| GET    | `/api/auth/me` | Profil pengguna yang sedang masuk |
+| PUT    | `/api/auth/password` | Ganti password (mencabut sesi lain) |
+| POST   | `/api/auth/forgot-password` | Kirim tautan reset password |
+| GET    | `/api/auth/reset-password/:token` | Periksa tautan reset (valid/tidak, milik email siapa) |
+| POST   | `/api/auth/reset-password` | Simpan password baru dari tautan reset |
+| POST   | `/api/auth/verify-email` | Konfirmasi email lewat token |
+| POST   | `/api/auth/resend-verification` | Kirim ulang tautan konfirmasi (butuh sesi) |
+| GET    | `/api/auth/google/start` | Mulai login Google (redirect ke Google) |
+| GET    | `/api/auth/google/callback` | Callback OAuth dari Google |
+| POST   | `/api/auth/google/exchange` | Tukar kode sekali pakai menjadi sesi |
+| GET    | `/api/transactions` | Transaksi Milik Anda (`?month=YYYY-MM` atau `?from=&to=`) |
 | POST   | `/api/transactions` | Tambah transaksi |
 | PUT    | `/api/transactions/:id` | Edit transaksi |
 | DELETE | `/api/transactions/:id` | Hapus transaksi (soft delete → recycle bin) |
@@ -104,5 +173,5 @@ Buka http://localhost:5173 di browser.
 | POST   | `/api/trash/:entity/:id/restore` | Pulihkan item (`transaction\|recurring\|transfer\|account`) |
 | DELETE | `/api/trash/:entity/:id` | Hapus permanen satu item |
 | DELETE | `/api/trash` | Kosongkan recycle bin |
-| GET    | `/api/backup` | Export seluruh data (JSON) |
-| POST   | `/api/restore` | Import seluruh data dari backup JSON |
+| GET    | `/api/backup` | Export seluruh data pengguna ini (JSON) |
+| POST   | `/api/restore` | Import seluruh data dari backup JSON (mengganti data pengguna ini) |

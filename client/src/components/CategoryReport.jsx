@@ -38,12 +38,12 @@ export default function CategoryReport({ data = [] }) {
           <p className="text-xs text-slate-400">Pengeluaran per kategori dari waktu ke waktu</p>
         </div>
       </div>
-      <div className="flex items-center gap-2 print:hidden">
+      <div className="flex flex-wrap items-center gap-2 print:hidden">
         <input
           type="month"
           value={fromMonth}
           onChange={(e) => setFromMonth(e.target.value)}
-          className="input w-36"
+          className="input w-28 sm:w-36"
           title="Dari bulan"
           aria-label="Dari bulan"
         />
@@ -52,7 +52,7 @@ export default function CategoryReport({ data = [] }) {
           type="month"
           value={toMonth}
           onChange={(e) => setToMonth(e.target.value)}
-          className="input w-36"
+          className="input w-28 sm:w-36"
           title="Sampai bulan"
           aria-label="Sampai bulan"
         />
