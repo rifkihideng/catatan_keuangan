@@ -119,6 +119,12 @@ Tombol Google hanya muncul di layar masuk bila kedua variabel itu terisi. Akun G
 - Backup otomatis file database ke `server/backups/` (setiap 6 jam, menyimpan 14 salinan terakhir).
 - Mode tema terang/gelap/otomatis (mengikuti sistem).
 
+### Antarmuka & panduan
+- **Navbar responsif**: di layar lebar semua aksi tampil berjajar; di layar sempit (HP/tablet) mengecil menjadi menu hamburger tanpa merusak tata letak.
+- **Menu "Data"**: ekspor CSV/PDF, import CSV, backup, dan restore dikelompokkan dalam satu dropdown agar navbar tetap ringkas.
+- **Avatar pengguna** dengan inisial nama di pojok kanan atas.
+- **Tutorial penggunaan**: panduan langkah demi langkah (catat transaksi, kelola rekening, transaksi berulang, anggaran, laporan, dan backup) muncul otomatis setelah masuk, dan bisa dibuka lagi kapan pun lewat tombol **Bantuan**.
+
 ## API
 
 Semua endpoint di bawah `/api` (kecuali `/api/auth/register`, `/api/auth/login`, dan `/api/health`) membutuhkan header `Authorization: Bearer <token>`. Data yang dikembalikan selalu hanya milik pengguna tersebut.
