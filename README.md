@@ -90,7 +90,7 @@ Aplikasi terdiri dari **frontend** (Vite/React) dan **backend** (Express + SQLit
    - `VITE_API_URL` = alamat backend + `/api`, mis. `https://api.domainmu.com/api`.
 4. Deploy — Vercel menjalankan `vite build` dan menyajikan hasil di `client/dist`.
 
-### 2. Backend ke host ber-penyimpanan persisten (Render / Railway / Fly.io)
+### 2. Backend ke host ber-penyimpanan persisten (Railway / Fly.io / Koyeb)
 1. Deploy folder `server/` (Node, `npm install`, `npm start`).
 2. Set environment variable di host backend:
    - `PUBLIC_URL` = alamat backend, mis. `https://api.domainmu.com`.
@@ -99,8 +99,6 @@ Aplikasi terdiri dari **frontend** (Vite/React) dan **backend** (Express + SQLit
 3. Tambahkan **callback URL baru** di OAuth App GitHub: `https://api.domainmu.com/api/auth/github/callback`.
 
 CORS backend sudah terbuka (`cors()`), jadi panggilan dari domain Vercel ke backend diperbolehkan.
-
-> **Render (Blueprint):** tersedia `render.yaml` di root repo — deploy folder `server/` sebagai web service dengan disk persisten `/var/data` untuk SQLite. Di dashboard Render pilih **New → Blueprint** lalu pilih repository ini. Pastikan Node ≥ 22.5 (sudah diatur lewat `engines` di `server/package.json` dan `.node-version`).
 
 ## Fitur
 

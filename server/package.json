@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "type": "module",
   "main": "index.js",
-  "engines": {
-    "node": ">=22.5.0"
-  },
   "scripts": {
     "dev": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning index.js",
     "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning index.js"

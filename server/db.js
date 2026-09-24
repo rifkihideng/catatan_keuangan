@@ -1,5 +1,4 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
@@ -10,8 +9,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.FINANCE_DB_PATH
   ? resolve(process.env.FINANCE_DB_PATH)
   : join(__dirname, 'finance.db');
-// Pastikan folder database ada (mis. /var/data pada disk persisten Render).
-mkdirSync(dirname(dbPath), { recursive: true });
 const db = new DatabaseSync(dbPath);
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec('PRAGMA foreign_keys = ON;');
