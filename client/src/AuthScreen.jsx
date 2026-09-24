@@ -9,7 +9,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { ForgotForm, ResetForm } from './PasswordResetForms';
-import { login, register, setToken } from './api';
+import { API_BASE, login, register, setToken } from './api';
 
 const REMEMBER_KEY = 'auth_remember';
 
@@ -65,7 +65,7 @@ export default function AuthScreen({
   }
 
   function startGithub() {
-    window.location.href = '/api/auth/github/start';
+    window.location.href = `${API_BASE}/auth/github/start`;
   }
 
   async function handleSubmit(e) {

@@ -79,6 +79,29 @@ Selama `RESEND_API_KEY` belum diisi, fitur tetap bisa dicoba: isi email (tautan 
 
 Saat login, GitHub meminta izin `read:user`, `user:email`, dan `read:org`; beri akses ke organisasi bila diminta. Tombol GitHub hanya muncul di layar masuk bila `GITHUB_CLIENT_ID` dan `GITHUB_CLIENT_SECRET` terisi. Hanya pengguna yang menjadi anggota `GITHUB_ORG` yang diizinkan masuk; akun baru otomatis dibuat dan langsung mendapat kategori & rekening bawaan.
 
+## Deployment
+
+Aplikasi terdiri dari **frontend** (Vite/React) dan **backend** (Express + SQLite). Backend menyimpan data di file SQLite sehingga butuh host dengan **penyimpanan persisten** — tidak cocok dengan Vercel (serverless, filesystem sementara).
+
+### 1. Frontend ke Vercel
+1. Di dashboard Vercel: **New Project** → import repository ini.
+2. Set **Root Directory** ke `client` (atau `Framework Preset: Vite` dengan output `client/dist`).
+3. Tambahkan **Environment Variable**:
+   - `VITE_API_URL` = alamat backend + `/api`, mis. `https://api.domainmu.com/api`.
+4. Deploy — Vercel menjalankan `vite build` dan menyajikan hasil di `client/dist`.
+
+### 2. Backend ke host ber-penyimpanan persisten (Render / Railway / Fly.io)
+1. Deploy folder `server/` (Node, `npm install`, `npm start`).
+2. Set environment variable di host backend:
+   - `PUBLIC_URL` = alamat backend, mis. `https://api.domainmu.com`.
+   - `APP_URL` = alamat frontend Vercel, mis. `https://domainmu.vercel.app`.
+   - `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_ORG`.
+3. Tambahkan **callback URL baru** di OAuth App GitHub: `https://api.domainmu.com/api/auth/github/callback`.
+
+CORS backend sudah terbuka (`cors()`), jadi panggilan dari domain Vercel ke backend diperbolehkan.
+
+> **Render (Blueprint):** tersedia `render.yaml` di root repo — deploy folder `server/` sebagai web service dengan disk persisten `/var/data` untuk SQLite. Di dashboard Render pilih **New → Blueprint** lalu pilih repository ini. Pastikan Node ≥ 22.5 (sudah diatur lewat `engines` di `server/package.json` dan `.node-version`).
+
 ## Fitur
 
 ### Transaksi & pencatatan

@@ -1,0 +1,34 @@
+# Blueprint Render untuk backend (folder server).
+# Deploy: dashboard Render → New → Blueprint → pilih repository ini.
+services:
+  - type: web
+    name: catatan-keuangan-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    plan: free
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TRUST_PROXY
+        value: "1"
+      # Alamat backend publik. Sesuaikan bila Render memberi URL lain.
+      - key: PUBLIC_URL
+        value: https://catatan-keuangan-api.onrender.com
+      # Alamat frontend Vercel — isi manual setelah frontend di-deploy.
+      - key: APP_URL
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_ORG
+        value: catatan-keuangan
+      # SQLite disimpan di disk persisten agar data tidak hilang saat restart.
+      - key: FINANCE_DB_PATH
+        value: /var/data/finance.db
+    disk:
+      name: sqlite-data
+      mountPath: /var/data
+      sizeGB: 1

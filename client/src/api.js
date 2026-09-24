@@ -1,4 +1,7 @@
-const BASE = '/api';
+// VITE_API_URL opsional: alamat API backend (mis. https://api.domainmu.com/api).
+// Kosong = pakai /api (diproxy oleh Vite saat dev).
+const BASE = import.meta.env.VITE_API_URL || '/api';
+export const API_BASE = BASE;
 const TOKEN_KEY = 'auth_token';
 
 // Dipicu saat server menolak token (401) agar App bisa menampilkan layar masuk.
