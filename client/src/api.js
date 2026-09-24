@@ -81,7 +81,7 @@ export const changePassword = (currentPassword, newPassword) =>
     body: JSON.stringify({ currentPassword, newPassword }),
   });
 
-// Konfigurasi publik layar masuk (login Google, pendaftaran, pengiriman email)
+// Konfigurasi publik layar masuk (login GitHub, pendaftaran, pengiriman email)
 export const getAuthConfig = () => request('/auth/config', {}, false);
 
 export const forgotPassword = (email) =>
@@ -98,8 +98,8 @@ export const verifyEmail = (token) =>
 
 export const resendVerification = () => request('/auth/resend-verification', { method: 'POST' });
 
-export const exchangeGoogleCode = (code) =>
-  request('/auth/google/exchange', { method: 'POST', body: JSON.stringify({ code }) }, false);
+export const exchangeGithubCode = (code) =>
+  request('/auth/github/exchange', { method: 'POST', body: JSON.stringify({ code }) }, false);
 
 export const getTransactions = ({ month, from, to } = {}) => {
   const params = new URLSearchParams();

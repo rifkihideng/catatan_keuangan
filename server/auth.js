@@ -190,79 +190,114 @@ export function consumeAuthToken(token, purpose) {
   return row.user_id;
 }
 
-// --- Google OAuth (opsional; aktif hanya bila kredensial tersedia) ----------
+// --- GitHub OAuth (opsional; login dibatasi pada anggota organisasi) -------
 
-const GOOGLE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
-const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
-const GOOGLE_USERINFO_ENDPOINT = 'https://openidconnect.googleapis.com/v1/userinfo';
-const STATE_TTL_MS = 10 * 60 * 1000;
+const GITHUB_AUTH_ENDPOINT = 'https://github.com/login/oauth/authorize';
+const GITHUB_TOKEN_ENDPOINT = 'https://github.com/login/oauth/access_token';
+const GITHUB_API_ENDPOINT = 'https://api.github.com';
+const GITHUB_STATE_TTL_MS = 10 * 60 * 1000;
 
-export function googleConfigured() {
-  return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+// Header standar untuk panggilan API GitHub (v3).
+const GITHUB_API_HEADERS = {
+  Accept: 'application/vnd.github+json',
+  'X-GitHub-Api-Version': '2022-11-28',
+  'User-Agent': 'finance-tracker',
+};
+
+export function githubConfigured() {
+  return Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
 }
 
-// state + PKCE disimpan di memori server (aplikasi ini berjalan satu proses).
-const googleStates = new Map();
+// Daftar organisasi yang diizinkan (pisahkan dengan koma), sudah di-lowercase.
+export function githubAllowedOrgs() {
+  return String(process.env.GITHUB_ORG || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
 
-export function createGoogleAuthUrl(redirectUri) {
+// state disimpan di memori server (aplikasi ini berjalan satu proses).
+const githubStates = new Map();
+
+export function createGithubAuthUrl(redirectUri) {
   const state = randomBytes(16).toString('base64url');
-  const verifier = randomBytes(32).toString('base64url');
-  const challenge = createHash('sha256').update(verifier).digest('base64url');
 
   const now = Date.now();
-  for (const [key, value] of googleStates) if (value.expiresAt <= now) googleStates.delete(key);
-  googleStates.set(state, { verifier, expiresAt: now + STATE_TTL_MS });
+  for (const [key, value] of githubStates) if (value.expiresAt <= now) githubStates.delete(key);
+  githubStates.set(state, { expiresAt: now + GITHUB_STATE_TTL_MS });
 
   const params = new URLSearchParams({
-    client_id: process.env.GOOGLE_CLIENT_ID,
+    client_id: process.env.GITHUB_CLIENT_ID,
     redirect_uri: redirectUri,
-    response_type: 'code',
-    scope: 'openid email profile',
+    // read:org dibutuhkan untuk melihat keanggotaan organisasi privat.
+    scope: 'read:user user:email read:org',
     state,
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-    prompt: 'select_account',
   });
-  return `${GOOGLE_AUTH_ENDPOINT}?${params}`;
+  return `${GITHUB_AUTH_ENDPOINT}?${params}`;
 }
 
-export function consumeGoogleState(state) {
+export function consumeGithubState(state) {
   const key = String(state || '');
-  const entry = googleStates.get(key);
+  const entry = githubStates.get(key);
   if (!entry) return null;
-  googleStates.delete(key);
+  githubStates.delete(key);
   return entry.expiresAt > Date.now() ? entry : null;
 }
 
-// Tukar authorization code → akses token → profil pengguna.
-export async function fetchGoogleProfile({ code, redirectUri, verifier }) {
-  const tokenRes = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+// Tukar authorization code → akses token → profil + keanggotaan organisasi.
+export async function fetchGithubProfile({ code, redirectUri }) {
+  const tokenRes = await fetch(GITHUB_TOKEN_ENDPOINT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
       code: String(code),
-      client_id: process.env.GOOGLE_CLIENT_ID,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      client_id: process.env.GITHUB_CLIENT_ID,
+      client_secret: process.env.GITHUB_CLIENT_SECRET,
       redirect_uri: redirectUri,
-      grant_type: 'authorization_code',
-      code_verifier: verifier,
     }),
   });
   const tokenData = await tokenRes.json().catch(() => ({}));
   if (!tokenRes.ok || !tokenData.access_token) {
-    throw new Error(tokenData.error_description || tokenData.error || 'Gagal menukar kode Google');
+    throw new Error(tokenData.error_description || tokenData.error || 'Gagal menukar kode GitHub');
   }
 
-  const profileRes = await fetch(GOOGLE_USERINFO_ENDPOINT, {
-    headers: { Authorization: `Bearer ${tokenData.access_token}` },
-  });
+  const auth = { Authorization: `Bearer ${tokenData.access_token}` };
+  const [profileRes, emailsRes, orgsRes] = await Promise.all([
+    fetch(`${GITHUB_API_ENDPOINT}/user`, { headers: { ...auth, ...GITHUB_API_HEADERS } }),
+    fetch(`${GITHUB_API_ENDPOINT}/user/emails`, { headers: { ...auth, ...GITHUB_API_HEADERS } }),
+    fetch(`${GITHUB_API_ENDPOINT}/user/orgs?per_page=100`, {
+      headers: { ...auth, ...GITHUB_API_HEADERS },
+    }),
+  ]);
+
   const profile = await profileRes.json().catch(() => ({}));
-  if (!profileRes.ok || !profile.email) throw new Error('Gagal mengambil profil Google');
+  const emails = await emailsRes.json().catch(() => []);
+  const orgs = await orgsRes.json().catch(() => []);
+
+  if (!profileRes.ok || !profile.login) throw new Error('Gagal mengambil profil GitHub');
+
+  // Email: pakai email publik profil; kalau kosong cari email utama yang terverifikasi.
+  let email = profile.email;
+  if (!email && Array.isArray(emails)) {
+    const primary = emails.find((e) => e.primary && e.verified) || emails.find((e) => e.verified);
+    email = primary?.email || '';
+  }
+  // Cadangan: alamat noreply GitHub supaya tetap punya email unik.
+  if (!email) email = `${profile.login}@users.noreply.github.com`;
+
+  const memberOrgs = Array.isArray(orgs)
+    ? orgs.map((o) => String(o.login || '').toLowerCase())
+    : [];
+  const allowed = githubAllowedOrgs();
+  // Bila GITHUB_ORG tidak diisi, keanggotaan tidak dibatasi.
+  const orgAllowed = allowed.length === 0 || allowed.some((org) => memberOrgs.includes(org));
 
   return {
-    email: normalizeEmail(profile.email),
-    name: String(profile.name || '').trim().slice(0, MAX_NAME_LENGTH),
-    emailVerified: profile.email_verified === true,
+    email: normalizeEmail(email),
+    name: String(profile.name || profile.login || '').trim().slice(0, MAX_NAME_LENGTH),
+    login: String(profile.login || ''),
+    memberOrgs,
+    orgAllowed,
   };
 }
 
@@ -273,14 +308,14 @@ function requestOrigin(req) {
 }
 
 // Alamat SERVER ini — dipakai sebagai redirect_uri OAuth (harus persis sama
-// dengan yang didaftarkan di Google Cloud Console).
+// dengan yang didaftarkan pada penyedia OAuth, mis. GitHub).
 export function serverUrl(req, path = '') {
   const base = process.env.PUBLIC_URL || requestOrigin(req);
   return `${String(base).replace(/\/+$/, '')}${path}`;
 }
 
 // Alamat APLIKASI (frontend) — dipakai untuk tautan di email dan redirect
-// setelah login Google. Pada deployment terpisah (client di Vercel, API di
+// setelah login OAuth. Pada deployment terpisah (client di Vercel, API di
 // host lain) isi APP_URL dengan alamat frontend.
 export function publicUrl(req, path = '') {
   const base = process.env.APP_URL || process.env.PUBLIC_URL || requestOrigin(req);

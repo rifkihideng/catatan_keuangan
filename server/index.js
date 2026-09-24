@@ -25,10 +25,10 @@ import {
   RESET_MINUTES,
   VERIFY_HOURS,
   OAUTH_CODE_MINUTES,
-  googleConfigured,
-  createGoogleAuthUrl,
-  consumeGoogleState,
-  fetchGoogleProfile,
+  githubConfigured,
+  createGithubAuthUrl,
+  consumeGithubState,
+  fetchGithubProfile,
   publicUrl,
   serverUrl,
   MIN_PASSWORD_LENGTH,
@@ -140,10 +140,6 @@ function requireAuth(req, res, next) {
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, signup: ALLOW_SIGNUP });
 });
-
-// Password untuk akun yang hanya masuk lewat Google: sengaja tidak berbentuk
-// hash scrypt yang sah sehingga tidak bisa dipakai untuk login password.
-const OAUTH_ONLY_PASSWORD = 'oauth-google';
 
 // Kirim tautan konfirmasi email. Kegagalan pengiriman tidak menggagalkan
 // permintaan — pengguna bisa minta ulang dari dalam aplikasi.
@@ -280,7 +276,7 @@ app.get('/api/auth/config', (req, res) => {
   res.json({
     siteName: appName(),
     signup: ALLOW_SIGNUP,
-    google: googleConfigured(),
+    github: githubConfigured(),
     email: emailConfigured(),
     requireVerification: REQUIRE_EMAIL_VERIFICATION,
     minPasswordLength: MIN_PASSWORD_LENGTH,
@@ -375,33 +371,40 @@ app.post('/api/auth/verify-email', (req, res) => {
   res.json({ ok: true, user: publicUser(user) });
 });
 
-// --- Login dengan Google (aktif bila GOOGLE_CLIENT_ID/SECRET diisi) ---------
+// --- Login dengan GitHub (opsional; dibatasi pada anggota GITHUB_ORG) ------
 
-app.get('/api/auth/google/start', (req, res) => {
-  if (!googleConfigured()) {
-    return res.status(404).json({ error: 'Login Google belum dikonfigurasi di server' });
+// Password untuk akun yang hanya masuk lewat GitHub: bukan hash scrypt yang
+// sah sehingga tidak bisa dipakai untuk login password biasa.
+const OAUTH_ONLY_PASSWORD_GITHUB = 'oauth-github';
+
+app.get('/api/auth/github/start', (req, res) => {
+  if (!githubConfigured()) {
+    return res.status(404).json({ error: 'Login GitHub belum dikonfigurasi di server' });
   }
-  res.redirect(createGoogleAuthUrl(serverUrl(req, '/api/auth/google/callback')));
+  res.redirect(createGithubAuthUrl(serverUrl(req, '/api/auth/github/callback')));
 });
 
-app.get('/api/auth/google/callback', async (req, res) => {
+app.get('/api/auth/github/callback', async (req, res) => {
   const clientUrl = publicUrl(req, '/');
   const fail = (reason) => res.redirect(`${clientUrl}?authError=${reason}`);
-  if (!googleConfigured()) return fail('google_tidak_aktif');
-  if (req.query.error) return fail('google_ditolak');
+  if (!githubConfigured()) return fail('github_tidak_aktif');
+  if (req.query.error) return fail('github_ditolak');
 
-  const state = consumeGoogleState(req.query.state);
-  if (!state || !req.query.code) return fail('google_state_tidak_valid');
+  const state = consumeGithubState(req.query.state);
+  if (!state || !req.query.code) return fail('github_state_tidak_valid');
 
   try {
-    const profile = await fetchGoogleProfile({
+    const profile = await fetchGithubProfile({
       code: req.query.code,
-      redirectUri: serverUrl(req, '/api/auth/google/callback'),
-      verifier: state.verifier,
+      redirectUri: serverUrl(req, '/api/auth/github/callback'),
     });
-    if (!profile.email || !profile.emailVerified) {
-      return fail('google_email_tidak_terverifikasi');
+    if (!profile.orgAllowed) {
+      console.warn(
+        `⛔ Login GitHub ditolak: @${profile.login} bukan anggota organisasi yang diizinkan.`
+      );
+      return fail('github_tidak_anggota');
     }
+    if (!profile.email) return fail('github_gagal');
 
     let user = db.prepare('SELECT * FROM users WHERE email = ?').get(profile.email);
     if (!user) {
@@ -410,13 +413,13 @@ app.get('/api/auth/google/callback', async (req, res) => {
           `INSERT INTO users (email, name, password_hash, email_verified_at)
            VALUES (?, ?, ?, datetime('now', 'localtime'))`
         )
-        .run(profile.email, profile.name, OAUTH_ONLY_PASSWORD);
+        .run(profile.email, profile.name, OAUTH_ONLY_PASSWORD_GITHUB);
       const userId = Number(result.lastInsertRowid);
       if (hasLegacyData()) adoptLegacyData(userId);
       else seedUserDefaults(userId);
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
     } else if (!user.email_verified_at) {
-      // Email dari Google sudah diverifikasi Google.
+      // Email dari GitHub sudah terverifikasi GitHub.
       db.prepare(
         "UPDATE users SET email_verified_at = datetime('now', 'localtime') WHERE id = ?"
       ).run(user.id);
@@ -424,18 +427,18 @@ app.get('/api/auth/google/callback', async (req, res) => {
 
     // Kode sekali pakai supaya token sesi tidak pernah muncul di URL/tombol back.
     const code = issueAuthToken(user.id, PURPOSE.oauthLogin, OAUTH_CODE_MINUTES);
-    return res.redirect(`${clientUrl}?google_code=${encodeURIComponent(code)}`);
+    return res.redirect(`${clientUrl}?github_code=${encodeURIComponent(code)}`);
   } catch (err) {
-    console.error('❌ Login Google gagal:', err.message);
-    return fail('google_gagal');
+    console.error('❌ Login GitHub gagal:', err.message);
+    return fail('github_gagal');
   }
 });
 
-// Tukar kode sekali pakai dari callback Google menjadi sesi
-app.post('/api/auth/google/exchange', (req, res) => {
+// Tukar kode sekali pakai dari callback GitHub menjadi sesi
+app.post('/api/auth/github/exchange', (req, res) => {
   const userId = consumeAuthToken(req.body?.code, PURPOSE.oauthLogin);
   if (!userId) {
-    return res.status(400).json({ error: 'Kode login Google tidak berlaku, silakan coba lagi' });
+    return res.status(400).json({ error: 'Kode login GitHub tidak berlaku, silakan coba lagi' });
   }
   const user = db
     .prepare('SELECT id, email, name, email_verified_at FROM users WHERE id = ?')

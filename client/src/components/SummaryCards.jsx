@@ -1,5 +1,6 @@
 import { Calendar, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import { formatRupiah, formatRupiahCompact } from '../format';
+import AnimatedNumber from './AnimatedNumber';
 
 export default function SummaryCards({ summary, periodLabel, balance }) {
   const totals = summary || {};
@@ -63,12 +64,12 @@ export default function SummaryCards({ summary, periodLabel, balance }) {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-slate-500">{c.label}</p>
-                  <p
+                  <AnimatedNumber
+                    value={c.value}
+                    format={formatRupiahCompact}
                     className={`truncate text-xl font-extrabold tracking-tight lg:text-2xl ${c.valueClass}`}
                     title={formatRupiah(c.value)}
-                  >
-                    {formatRupiahCompact(c.value)}
-                  </p>
+                  />
                   <p className="text-xs text-slate-400">{c.sub}</p>
                 </div>
               </div>

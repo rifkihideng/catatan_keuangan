@@ -110,11 +110,11 @@ body {
   }
 
   .btn-primary {
-    @apply bg-indigo-600 text-white shadow-sm shadow-indigo-600/20 hover:bg-indigo-700 active:scale-[0.98];
+    @apply bg-indigo-600 text-white shadow-sm shadow-indigo-600/20 hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-md hover:shadow-indigo-600/25 active:translate-y-0 active:scale-[0.98];
   }
 
   .btn-secondary {
-    @apply border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-700;
+    @apply border border-slate-200 bg-white text-slate-700 shadow-sm hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md active:translate-y-0 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-700;
   }
 
   .btn-ghost {
@@ -249,6 +249,22 @@ html.theme-transition *::after {
 }
 .animate-list-in {
   animation: list-in 320ms var(--ease-smooth) both;
+}
+
+/* Menu dropdown (navbar) muncul lembut dari atas */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-menu-in {
+  animation: menu-in 180ms var(--ease-smooth) both;
+  transform-origin: top right;
 }
 
 /* Bagian utama muncul berurutan setelah data siap */

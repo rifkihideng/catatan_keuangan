@@ -31,7 +31,7 @@ import {
   deleteRecurring,
   deleteTransaction,
   deleteTransfer,
-  exchangeGoogleCode,
+  exchangeGithubCode,
   getAccounts,
   getAuthConfig,
   getBackup,
@@ -91,11 +91,11 @@ const EMPTY_SUMMARY = {
 
 // Pesan untuk kode galat yang dikirim server lewat ?authError=...
 const AUTH_ERRORS = {
-  google_tidak_aktif: 'Login Google belum dikonfigurasi di server ini.',
-  google_ditolak: 'Akses ke akun Google dibatalkan.',
-  google_state_tidak_valid: 'Sesi login Google kedaluwarsa. Silakan coba lagi.',
-  google_email_tidak_terverifikasi: 'Email Google kamu belum diverifikasi Google.',
-  google_gagal: 'Login dengan Google gagal. Silakan coba lagi.',
+  github_tidak_aktif: 'Login GitHub belum dikonfigurasi di server ini.',
+  github_ditolak: 'Akses ke akun GitHub dibatalkan.',
+  github_state_tidak_valid: 'Sesi login GitHub kedaluwarsa. Silakan coba lagi.',
+  github_tidak_anggota: 'Akun GitHub kamu bukan anggota organisasi yang diizinkan.',
+  github_gagal: 'Login dengan GitHub gagal. Silakan coba lagi.',
   default: 'Login gagal. Silakan coba lagi.',
 };
 
@@ -201,7 +201,7 @@ export default function App() {
   }, [menuOpen]);
 
   // Bootstrap: tangani parameter URL (reset password, konfirmasi email, kode
-  // Google, pesan galat) lalu periksa sesi yang tersimpan.
+  // OAuth, pesan galat) lalu periksa sesi yang tersimpan.
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams(window.location.search);
@@ -220,10 +220,10 @@ export default function App() {
         clearUrl();
       }
 
-      const googleCode = params.get('google_code');
-      if (googleCode) {
+      const githubCode = params.get('github_code');
+      if (githubCode) {
         try {
-          const data = await exchangeGoogleCode(googleCode);
+          const data = await exchangeGithubCode(githubCode);
           setToken(data.token);
           if (cancelled) return;
           setAuthError('');
@@ -713,7 +713,7 @@ export default function App() {
                   <div
                     id="data-menu"
                     role="menu"
-                    className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-slate-200/70 bg-white p-1.5 shadow-xl dark:border-slate-700/60 dark:bg-slate-800"
+                    className="absolute right-0 top-full z-50 mt-2 w-60 animate-menu-in overflow-hidden rounded-xl border border-slate-200/70 bg-white p-1.5 shadow-xl dark:border-slate-700/60 dark:bg-slate-800"
                   >
                     <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
                       Data &amp; Cadangan
@@ -830,7 +830,7 @@ export default function App() {
           {menuOpen && (
             <nav
               id="mobile-menu"
-              className="mt-3 rounded-2xl border border-slate-200/70 bg-white p-3 shadow-lg print:hidden lg:hidden dark:border-slate-700/60 dark:bg-slate-800"
+              className="mt-3 animate-menu-in rounded-2xl border border-slate-200/70 bg-white p-3 shadow-lg print:hidden lg:hidden dark:border-slate-700/60 dark:bg-slate-800"
             >
               <button
                 onClick={() => {

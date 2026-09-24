@@ -45,7 +45,7 @@ Backend membaca variabel lingkungan berikut:
 | `FINANCE_DB_PATH` | `server/finance.db` | Lokasi file database SQLite (mis. volume persisten di hosting). |
 | `ALLOW_SIGNUP` | `1` | Set `0` untuk menutup pendaftaran akun baru (mode undangan). |
 | `TRUST_PROXY` | – | Set `1` bila berjalan di belakang reverse proxy agar IP asli terbaca pembatas percobaan login. |
-| `PUBLIC_URL` | dari request | Alamat **server/API** ini. Dipakai untuk `redirect_uri` Google dan sebagai cadangan alamat frontend. |
+| `PUBLIC_URL` | dari request | Alamat **server/API** ini. Dipakai untuk `redirect_uri` OAuth dan sebagai cadangan alamat frontend. |
 | `APP_URL` | ikut `PUBLIC_URL` | Alamat **frontend**. Isi bila client & server di host berbeda (mis. client di Vercel, API di Render). |
 | `SESSION_HOURS` | `720` (30 hari) | Masa berlaku sesi saat **"Tetap masuk"** dicentang. |
 | `SESSION_SHORT_HOURS` | `12` | Masa berlaku sesi bila tidak dicentang. |
@@ -55,7 +55,8 @@ Backend membaca variabel lingkungan berikut:
 | `RESET_TOKEN_MINUTES` | `60` | Masa berlaku tautan reset password. |
 | `VERIFY_TOKEN_HOURS` | `24` | Masa berlaku tautan konfirmasi email. |
 | `REQUIRE_EMAIL_VERIFICATION` | `0` | Set `1` untuk mewajibkan konfirmasi email sebelum aplikasi bisa dipakai. Otomatis diabaikan bila email belum dikonfigurasi. |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | – | Mengaktifkan tombol **Lanjutkan dengan Google**. |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | – | Mengaktifkan tombol **Masuk dengan GitHub**. |
+| `GITHUB_ORG` | – | Nama organisasi GitHub yang anggotanya diizinkan masuk (pisahkan dengan koma untuk lebih dari satu). Kosong = semua pengguna GitHub diizinkan. |
 
 ### Mengaktifkan pengiriman email (lupa password & konfirmasi email)
 1. Daftar di Resend, verifikasi domain pengirim, lalu buat API key.
@@ -64,12 +65,19 @@ Backend membaca variabel lingkungan berikut:
 
 Selama `RESEND_API_KEY` belum diisi, fitur tetap bisa dicoba: isi email (tautan reset/konfirmasi) dicetak pada log server, dan pemakai baru otomatis dianggap terverifikasi.
 
-### Mengaktifkan login Google
-1. Buat OAuth Client ID (tipe **Web application**) di Google Cloud Console.
-2. Daftarkan Authorized redirect URI: `<PUBLIC_URL>/api/auth/google/callback`.
-3. Set `GOOGLE_CLIENT_ID` dan `GOOGLE_CLIENT_SECRET` lalu jalankan ulang server.
+### Mengaktifkan login GitHub (khusus anggota organisasi)
+1. Buat **OAuth App** di GitHub: `Settings → Developer settings → OAuth Apps → New OAuth App`.
+   - **Homepage URL**: alamat frontend (lokal: `http://localhost:5173`).
+   - **Authorization callback URL**: `<PUBLIC_URL>/api/auth/github/callback` (lokal: `http://localhost:3001/api/auth/github/callback`).
+2. Set di `server/.env`:
+   - `GITHUB_CLIENT_ID` dan `GITHUB_CLIENT_SECRET` dari OAuth App.
+   - `GITHUB_ORG`: nama organisasi yang anggotanya diizinkan masuk (mis. `catatan-keuangan`).
+   - `APP_URL`: alamat frontend (lokal: `http://localhost:5173`) — tujuan redirect setelah login.
+   - `PUBLIC_URL`: alamat server/API (lokal: `http://localhost:3001`).
+3. Jalankan ulang server.
+4. Bila organisasinya **privat**, organisasi harus menyetujui OAuth App tersebut (`Settings → Third-party access`) supaya keanggotaan bisa dibaca; tanpa itu anggota organisasi privat tidak dikenali dan ditolak.
 
-Tombol Google hanya muncul di layar masuk bila kedua variabel itu terisi. Akun Google akan ditautkan ke akun dengan email yang sama (email dari Google sudah terverifikasi), dan akun baru langsung mendapat kategori & rekening bawaan.
+Saat login, GitHub meminta izin `read:user`, `user:email`, dan `read:org`; beri akses ke organisasi bila diminta. Tombol GitHub hanya muncul di layar masuk bila `GITHUB_CLIENT_ID` dan `GITHUB_CLIENT_SECRET` terisi. Hanya pengguna yang menjadi anggota `GITHUB_ORG` yang diizinkan masuk; akun baru otomatis dibuat dan langsung mendapat kategori & rekening bawaan.
 
 ## Fitur
 
@@ -105,7 +113,7 @@ Tombol Google hanya muncul di layar masuk bila kedua variabel itu terisi. Akun G
 - **Masuk / Daftar** dengan email + password. Password disimpan sebagai hash **scrypt** (salt acak), bukan teks biasa.
 - **Lupa password**: kirim tautan reset lewat email (berlaku 60 menit, sekali pakai). Membuka tautan reset otomatis menandai email sebagai terverifikasi dan mencabut semua sesi lama.
 - **Konfirmasi email**: tautan verifikasi berlaku 24 jam; banner pengingat + tombol kirim ulang tampil di dashboard. Bisa diwajibkan dengan `REQUIRE_EMAIL_VERIFICATION=1`.
-- **Login dengan Google** (opsional, OAuth 2.0 + PKCE) dengan penautan akun berdasarkan email terverifikasi.
+- **Login dengan GitHub** (opsional, OAuth 2.0) yang bisa dibatasi hanya untuk anggota organisasi tertentu (`GITHUB_ORG`).
 - **"Tetap masuk"** untuk sesi panjang (30 hari); tanpa itu sesi berakhir dalam 12 jam. Keduanya bisa diatur lewat env.
 - Sesi login disimpan sebagai hash SHA-256 di server dan bisa dicabut kapan pun lewat tombol **Keluar**.
 - Ganti password dari API (`PUT /api/auth/password`) — sesi di perangkat lain otomatis dicabut.
@@ -132,7 +140,7 @@ Semua endpoint di bawah `/api` (kecuali `/api/auth/register`, `/api/auth/login`,
 | Method | Endpoint | Keterangan |
 | ------ | -------- | ---------- |
 | GET    | `/api/health` | Cek status server |
-| GET    | `/api/auth/config` | Konfigurasi publik: pendaftaran, Google, email, syarat password |
+| GET    | `/api/auth/config` | Konfigurasi publik: pendaftaran, GitHub, email, syarat password |
 | POST   | `/api/auth/register` | Daftar akun baru (`email`, `name`, `password` ≥ 8 karakter) |
 | POST   | `/api/auth/login` | Masuk (`remember: true` untuk sesi panjang), mengembalikan `token` + `user` |
 | POST   | `/api/auth/logout` | Keluar (mencabut token yang dipakai) |
@@ -143,9 +151,9 @@ Semua endpoint di bawah `/api` (kecuali `/api/auth/register`, `/api/auth/login`,
 | POST   | `/api/auth/reset-password` | Simpan password baru dari tautan reset |
 | POST   | `/api/auth/verify-email` | Konfirmasi email lewat token |
 | POST   | `/api/auth/resend-verification` | Kirim ulang tautan konfirmasi (butuh sesi) |
-| GET    | `/api/auth/google/start` | Mulai login Google (redirect ke Google) |
-| GET    | `/api/auth/google/callback` | Callback OAuth dari Google |
-| POST   | `/api/auth/google/exchange` | Tukar kode sekali pakai menjadi sesi |
+| GET    | `/api/auth/github/start` | Mulai login GitHub (redirect ke GitHub) |
+| GET    | `/api/auth/github/callback` | Callback OAuth dari GitHub |
+| POST   | `/api/auth/github/exchange` | Tukar kode sekali pakai menjadi sesi |
 | GET    | `/api/transactions` | Transaksi Milik Anda (`?month=YYYY-MM` atau `?from=&to=`) |
 | POST   | `/api/transactions` | Tambah transaksi |
 | PUT    | `/api/transactions/:id` | Edit transaksi |
