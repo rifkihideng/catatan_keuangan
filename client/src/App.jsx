@@ -14,7 +14,6 @@ import {
   Moon,
   Printer,
   RotateCcw,
-  ShieldCheck,
   Sun,
   Upload,
   Wallet,
@@ -74,7 +73,6 @@ import StatsCard from './components/StatsCard';
 import AccountsCard from './components/AccountsCard';
 import RecurringCard from './components/RecurringCard';
 import TutorialDialog from './components/TutorialDialog';
-import SecurityDialog from './components/SecurityDialog';
 
 // Ringkasan kosong — dipakai saat pertama kali memuat dan sesudah keluar akun.
 const EMPTY_SUMMARY = {
@@ -133,7 +131,6 @@ export default function App() {
   const [dataMenuOpen, setDataMenuOpen] = useState(false);
   const [mobileDataOpen, setMobileDataOpen] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
-  const [showSecurity, setShowSecurity] = useState(false);
   const [theme, setTheme] = useState(() => {
     try {
       const saved = localStorage.getItem('theme');
@@ -781,15 +778,6 @@ export default function App() {
                 className="hidden"
                 onChange={(e) => handleImportCSV(e.target.files?.[0])}
               />
-              <button
-                onClick={() => setShowSecurity(true)}
-                className="btn btn-secondary px-3 py-2"
-                title="Keamanan akun"
-                aria-label="Pengaturan keamanan akun"
-              >
-                <ShieldCheck className="h-4 w-4" />
-                <span className="hidden md:inline">Keamanan</span>
-              </button>
               <span className="mx-0.5 hidden h-8 w-px bg-slate-200 sm:block dark:bg-slate-700" />
               <span className="hidden items-center gap-2.5 sm:flex">
                 <span
@@ -842,15 +830,6 @@ export default function App() {
                 className="btn btn-primary w-full px-3 py-2.5"
               >
                 <CircleHelp className="h-4 w-4" /> Bantuan &amp; Tutorial
-              </button>
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  setShowSecurity(true);
-                }}
-                className="btn btn-secondary mt-2 w-full px-3 py-2.5"
-              >
-                <ShieldCheck className="h-4 w-4" /> Keamanan Akun
               </button>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <button
@@ -1133,11 +1112,6 @@ export default function App() {
       </main>
 
       <TutorialDialog open={showTutorial} onClose={() => setShowTutorial(false)} />
-      <SecurityDialog
-        open={showSecurity}
-        onClose={() => setShowSecurity(false)}
-        email={auth.user?.email}
-      />
     </div>
   );
 }

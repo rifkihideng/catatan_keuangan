@@ -1,6 +1,6 @@
 // Modul autentikasi: hashing password, token sesi, dan pembatas percobaan login.
 // Hanya memakai modul bawaan Node (node:crypto) supaya tidak menambah dependensi.
-import { randomBytes, randomInt, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
+import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { db } from './db.js';
 
 const SCRYPT_KEYLEN = 64;
@@ -112,22 +112,15 @@ export const PURPOSE = {
   resetPassword: 'reset_password',
   verifyEmail: 'verify_email',
   oauthLogin: 'oauth_login',
-  twoFactor: 'two_factor',
-  twoFactorPending: 'two_factor_pending',
-  twoFactorSetup: 'two_factor_setup',
 };
-
-export const TWO_FACTOR_MINUTES = Number(process.env.TWO_FACTOR_MINUTES) || 5;
 
 function expirySql(minutes) {
   return `datetime('now', 'localtime', '+${Number(minutes)} minutes')`;
 }
 
 // Terbitkan token baru; token lama untuk tujuan yang sama dibatalkan.
-// `secret` opsional: untuk OTP/kode yang nilainya ditentukan sendiri (mis. 6 digit).
-export async function issueAuthToken(userId, purpose, minutes, secret = null) {
-  const value = secret ?? createToken().token;
-  const tokenHash = hashToken(value);
+export async function issueAuthToken(userId, purpose, minutes) {
+  const { token, tokenHash } = createToken();
   await db.prepare("DELETE FROM auth_tokens WHERE expires_at <= datetime('now', 'localtime')").run();
   await db.prepare('DELETE FROM auth_tokens WHERE user_id = ? AND purpose = ?').run(userId, purpose);
   await db
@@ -135,31 +128,7 @@ export async function issueAuthToken(userId, purpose, minutes, secret = null) {
       `INSERT INTO auth_tokens (token_hash, user_id, purpose, expires_at) VALUES (?, ?, ?, ${expirySql(minutes)})`
     )
     .run(tokenHash, userId, purpose);
-  return value;
-}
-
-// Kode OTP 6 digit (untuk verifikasi 2 langkah).
-export function generateOtpCode() {
-  return String(randomInt(0, 1000000)).padStart(6, '0');
-}
-
-// Pakai kode OTP (dibandingkan hash-nya, sekali pakai). Kembalikan true bila sah.
-export async function consumeOtp(userId, code, purpose) {
-  const value = String(code ?? '').trim();
-  if (!value) return false;
-  const tokenHash = hashToken(value);
-  const row = await db
-    .prepare(
-      `SELECT user_id FROM auth_tokens
-       WHERE token_hash = ? AND purpose = ? AND user_id = ? AND used_at IS NULL
-         AND expires_at > datetime('now', 'localtime')`
-    )
-    .get(tokenHash, purpose, userId);
-  if (!row) return false;
-  await db
-    .prepare("UPDATE auth_tokens SET used_at = datetime('now', 'localtime') WHERE token_hash = ?")
-    .run(tokenHash);
-  return true;
+  return token;
 }
 
 // Cek token tanpa memakainya (mis. untuk menampilkan form di klien).

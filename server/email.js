@@ -97,23 +97,6 @@ Kalau kamu tidak meminta ini, abaikan saja email ini — password kamu tidak ber
   };
 }
 
-export function twoFactorEmail({ code, expiresMinutes }) {
-  const html = `<!doctype html>
-<html lang="id"><body style="margin:0;padding:24px;background:#f1f5f9;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1e293b">
-  <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;padding:32px">
-    <h1 style="margin:0 0 12px;font-size:20px">Kode verifikasi</h1>
-    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#475569">Gunakan kode berikut untuk menyelesaikan verifikasi. Kode berlaku ${expiresMinutes} menit.</p>
-    <p style="margin:0 0 24px;font-size:32px;font-weight:700;letter-spacing:6px;color:#4f46e5">${code}</p>
-    <p style="margin:0;font-size:12px;color:#94a3b8">Kalau kamu tidak meminta kode ini, abaikan saja email ini.</p>
-  </div>
-</body></html>`;
-  return {
-    subject: `Kode verifikasi ${appName()}`,
-    text: `Kode verifikasi kamu: ${code}\n\nKode berlaku ${expiresMinutes} menit. Kalau kamu tidak memintanya, abaikan saja email ini.`,
-    html,
-  };
-}
-
 export function verifyEmailEmail({ url, expiresHours }) {
   return {
     subject: `Konfirmasi email ${appName()}`,

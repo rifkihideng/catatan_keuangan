@@ -21,9 +21,6 @@ import {
   peekAuthToken,
   consumeAuthToken,
   PURPOSE,
-  TWO_FACTOR_MINUTES,
-  generateOtpCode,
-  consumeOtp,
   RESET_MINUTES,
   VERIFY_HOURS,
   OAUTH_CODE_MINUTES,
@@ -40,7 +37,6 @@ import {
   emailConfigured,
   resetPasswordEmail,
   verifyEmailEmail,
-  twoFactorEmail,
   appName,
 } from './email.js';
 
@@ -130,13 +126,6 @@ function clearSessionCookie(res) {
     sameSite: COOKIE_SAME_SITE,
     path: '/',
   });
-}
-
-function maskEmail(email) {
-  const [name, domain] = String(email).split('@');
-  if (!domain) return String(email);
-  const visible = name.slice(0, 2);
-  return `${visible}${'•'.repeat(Math.max(1, name.length - visible.length))}@${domain}`;
 }
 
 // Batas permintaan tautan reset: 5 kali per jam per IP+email.
@@ -339,62 +328,9 @@ app.post(
     }
     await clearAttempts(key);
     await db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now', 'localtime')").run();
-
-    // Verifikasi 2 langkah aktif → kirim kode OTP ke email, jangan buat sesi dulu.
-    if (user.two_factor_enabled) {
-      const code = generateOtpCode();
-      await issueAuthToken(user.id, PURPOSE.twoFactor, TWO_FACTOR_MINUTES, code);
-      const pending = await issueAuthToken(user.id, PURPOSE.twoFactorPending, TWO_FACTOR_MINUTES);
-      try {
-        await sendEmail({
-          to: user.email,
-          ...twoFactorEmail({ code, expiresMinutes: TWO_FACTOR_MINUTES }),
-        });
-      } catch (err) {
-        console.error('❌ Gagal mengirim kode 2FA:', err.message);
-      }
-      await logEvent(user.id, 'login_2fa_sent', req);
-      return res.json({
-        twoFactorRequired: true,
-        twoFactorToken: pending,
-        email: maskEmail(user.email),
-      });
-    }
-
     const token = await createSession(user.id, req, remember === true);
     setSessionCookie(res, token, remember === true);
     await logEvent(user.id, 'login', req);
-    res.json({ user: publicUser(user) });
-  })
-);
-
-// Selesaikan login dengan kode 2FA (tanpa sesi — dipanggil sebelum masuk penuh).
-app.post(
-  '/api/auth/2fa/verify',
-  asyncHandler(async (req, res) => {
-    const { twoFactorToken, code, remember } = req.body ?? {};
-    const key = `2fa|${attemptKey(req)}`;
-    if (await tooManyAttempts(key, 10)) {
-      return res.status(429).json({ error: 'Terlalu banyak percobaan. Coba lagi nanti.' });
-    }
-    const userId = await consumeAuthToken(twoFactorToken, PURPOSE.twoFactorPending);
-    if (!userId) {
-      await recordFailedAttempt(key);
-      return res.status(400).json({ error: 'Sesi verifikasi kedaluwarsa. Silakan masuk ulang.' });
-    }
-    if (!(await consumeOtp(userId, code, PURPOSE.twoFactor))) {
-      await recordFailedAttempt(key);
-      await logEvent(userId, 'login_2fa_failed', req);
-      return res.status(400).json({ error: 'Kode salah atau kedaluwarsa.' });
-    }
-    await clearAttempts(key);
-    await db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now', 'localtime')").run();
-    const token = await createSession(userId, req, remember === true);
-    setSessionCookie(res, token, remember === true);
-    const user = await db
-      .prepare('SELECT id, email, name, email_verified_at FROM users WHERE id = ?')
-      .get(userId);
-    await logEvent(userId, 'login', req);
     res.json({ user: publicUser(user) });
   })
 );
@@ -679,89 +615,6 @@ app.get(
       )
       .all(req.userId, req.user.email);
     res.json(rows);
-  })
-);
-
-// --- Verifikasi 2 langkah (2FA) ---------------------------------------------
-
-// Status 2FA akun saat ini
-app.get(
-  '/api/auth/2fa',
-  asyncHandler(async (req, res) => {
-    const user = await db
-      .prepare('SELECT two_factor_enabled, email_verified_at FROM users WHERE id = ?')
-      .get(req.userId);
-    res.json({
-      enabled: Boolean(user?.two_factor_enabled),
-      emailVerified: Boolean(user?.email_verified_at),
-      emailConfigured: emailConfigured(),
-    });
-  })
-);
-
-// Mulai aktivasi 2FA: kirim kode konfirmasi ke email.
-app.post(
-  '/api/auth/2fa/enable',
-  asyncHandler(async (req, res) => {
-    if (!emailConfigured()) {
-      return res
-        .status(403)
-        .json({ error: 'Verifikasi 2 langkah memerlukan pengiriman email yang dikonfigurasi.' });
-    }
-    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
-    if (!user.email_verified_at) {
-      return res
-        .status(403)
-        .json({ error: 'Konfirmasi alamat email kamu dulu sebelum mengaktifkan 2FA.' });
-    }
-    if (user.two_factor_enabled) {
-      return res.status(409).json({ error: 'Verifikasi 2 langkah sudah aktif.' });
-    }
-    const key = `2fa-setup|${attemptKey(req)}`;
-    if (await tooManyAttempts(key, 5, 60 * 60 * 1000)) {
-      return res.status(429).json({ error: 'Terlalu banyak permintaan. Coba lagi nanti.' });
-    }
-    await recordFailedAttempt(key, 60 * 60 * 1000);
-    const code = generateOtpCode();
-    await issueAuthToken(req.userId, PURPOSE.twoFactorSetup, TWO_FACTOR_MINUTES, code);
-    try {
-      await sendEmail({
-        to: user.email,
-        ...twoFactorEmail({ code, expiresMinutes: TWO_FACTOR_MINUTES }),
-      });
-    } catch (err) {
-      console.error('❌ Gagal mengirim kode 2FA:', err.message);
-      return res.status(500).json({ error: 'Gagal mengirim kode verifikasi.' });
-    }
-    res.json({ sent: true, email: maskEmail(user.email) });
-  })
-);
-
-// Konfirmasi aktivasi 2FA dengan kode yang dikirim.
-app.post(
-  '/api/auth/2fa/confirm',
-  asyncHandler(async (req, res) => {
-    const ok = await consumeOtp(req.userId, req.body?.code, PURPOSE.twoFactorSetup);
-    if (!ok) {
-      return res.status(400).json({ error: 'Kode salah atau kedaluwarsa.' });
-    }
-    await db.prepare('UPDATE users SET two_factor_enabled = 1 WHERE id = ?').run(req.userId);
-    await logEvent(req.userId, '2fa_enabled', req);
-    res.json({ enabled: true });
-  })
-);
-
-// Nonaktifkan 2FA (butuh password saat ini).
-app.post(
-  '/api/auth/2fa/disable',
-  asyncHandler(async (req, res) => {
-    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
-    if (!user || !verifyPassword(String(req.body?.password ?? ''), user.password_hash)) {
-      return res.status(400).json({ error: 'Password saat ini salah.' });
-    }
-    await db.prepare('UPDATE users SET two_factor_enabled = 0 WHERE id = ?').run(req.userId);
-    await logEvent(req.userId, '2fa_disabled', req);
-    res.json({ enabled: false });
   })
 );
 

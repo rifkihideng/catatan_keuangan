@@ -29,7 +29,6 @@ const SCHEMA = [
     name TEXT,
     password_hash TEXT NOT NULL,
     email_verified_at TEXT,
-    two_factor_enabled INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   )`,
 
@@ -124,7 +123,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS auth_tokens (
     token_hash TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    purpose TEXT NOT NULL CHECK (purpose IN ('reset_password', 'verify_email', 'oauth_login', 'two_factor', 'two_factor_pending', 'two_factor_setup')),
+    purpose TEXT NOT NULL CHECK (purpose IN ('reset_password', 'verify_email', 'oauth_login')),
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     expires_at TEXT NOT NULL,
     used_at TEXT
@@ -147,50 +146,6 @@ const SCHEMA = [
 
 for (const sql of SCHEMA) {
   await client.execute(sql);
-}
-
-// Migrasi basis data lama: tambah kolom 2FA bila belum ada.
-try {
-  await client.execute(
-    `ALTER TABLE users ADD COLUMN two_factor_enabled INTEGER NOT NULL DEFAULT 0`
-  );
-} catch {
-  // Kolom sudah ada — abaikan.
-}
-
-// Migrasi basis data lama: tabel auth_tokens hanya mengizinkan 3 purpose.
-// Perluas CHECK-nya agar purpose verifikasi 2 langkah bisa dipakai.
-const authTokensSql = String(
-  (
-    await client.execute(
-      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'auth_tokens'"
-    )
-  ).rows?.[0]?.sql || ''
-);
-if (authTokensSql && !authTokensSql.includes('two_factor')) {
-  try {
-    await client.batch(
-      [
-        `CREATE TABLE auth_tokens_new (
-          token_hash TEXT PRIMARY KEY,
-          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          purpose TEXT NOT NULL CHECK (purpose IN ('reset_password','verify_email','oauth_login','two_factor','two_factor_pending','two_factor_setup')),
-          created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-          expires_at TEXT NOT NULL,
-          used_at TEXT
-        )`,
-        'INSERT INTO auth_tokens_new SELECT token_hash, user_id, purpose, created_at, expires_at, used_at FROM auth_tokens',
-        'DROP TABLE auth_tokens',
-        'ALTER TABLE auth_tokens_new RENAME TO auth_tokens',
-        'CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id, purpose)',
-        'CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires ON auth_tokens(expires_at)',
-      ],
-      'write'
-    );
-    console.log('✅ Migrasi auth_tokens untuk 2FA selesai.');
-  } catch (e) {
-    console.error('⚠️ Gagal memigrasi auth_tokens:', e.message);
-  }
 }
 
 // ---------------------------------------------------------------------------

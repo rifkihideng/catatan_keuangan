@@ -81,24 +81,6 @@ export const resendVerification = () => request('/auth/resend-verification', { m
 export const exchangeGithubCode = (code) =>
   request('/auth/github/exchange', { method: 'POST', body: JSON.stringify({ code }) }, false);
 
-// --- Verifikasi 2 langkah (2FA) ---
-export const verifyTwoFactor = (twoFactorToken, code, remember = false) =>
-  request(
-    '/auth/2fa/verify',
-    { method: 'POST', body: JSON.stringify({ twoFactorToken, code, remember }) },
-    false
-  );
-
-export const getTwoFactor = () => request('/auth/2fa');
-
-export const enableTwoFactor = () => request('/auth/2fa/enable', { method: 'POST' });
-
-export const confirmTwoFactor = (code) =>
-  request('/auth/2fa/confirm', { method: 'POST', body: JSON.stringify({ code }) });
-
-export const disableTwoFactor = (password) =>
-  request('/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ password }) });
-
 export const getTransactions = ({ month, from, to } = {}) => {
   const params = new URLSearchParams();
   if (month) params.set('month', month);
