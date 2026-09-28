@@ -9,7 +9,10 @@ export const AUTH_UNAUTHORIZED_EVENT = 'auth:unauthorized';
 // Token sesi dikirim lewat cookie httpOnly (diatur server), jadi tidak perlu
 // disimpan/dibaca di sini. Semua permintaan menyertakan cookie lewat credentials.
 async function request(url, options = {}, handleUnauthorized = true) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  const headers = { ...(options.headers || {}) };
+  // Content-Type hanya untuk request yang punya body (POST/PUT/PATCH), supaya
+  // GET tidak memicu preflight CORS yang menambah beban cold-start.
+  if (options.body) headers['Content-Type'] = 'application/json';
 
   let res;
   try {
