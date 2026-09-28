@@ -68,6 +68,13 @@ app.use(
   })
 );
 
+// Respons API tidak boleh di-cache: mencegah browser/CDN menyajikan header CORS
+// atau data lama (mis. ACAO wildcard dari versi sebelumnya) setelah redeploy.
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 // Limit dinaikkan dari default 100kb agar import CSV & restore backup JSON besar tidak gagal 413
 app.use(express.json({ limit: '5mb' }));
 app.use(cookieParser());
