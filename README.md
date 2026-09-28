@@ -4,13 +4,13 @@ Aplikasi pencatat keuangan pribadi: pemasukan & pengeluaran, anggaran, multi-rek
 
 ## Teknologi
 - **Frontend**: Vite + React 19 + Tailwind CSS v4 + Recharts
-- **Backend**: Express + `node:sqlite` (database SQLite bawaan Node.js)
+- **Backend**: Express + Turso (libsql, SQLite di cloud)
 
 ## Struktur
 ```
 project fix 4/
 ├── client/   # Frontend (Vite + React + Tailwind)
-└── server/   # Backend (Express + SQLite)
+└── server/   # Backend (Express + Turso)
 ```
 
 ## Cara menjalankan
@@ -23,7 +23,7 @@ cd server
 npm install
 npm run dev
 ```
-Server berjalan di http://localhost:3001 (database otomatis dibuat di `server/finance.db`).
+Server berjalan di http://localhost:3001. Data disimpan di **Turso** — isi `TURSO_DATABASE_URL` dan `TURSO_AUTH_TOKEN` di `server/.env` terlebih dahulu (lihat bagian Konfigurasi).
 
 ### 2. Frontend (client)
 ```bash
@@ -42,7 +42,8 @@ Backend membaca variabel lingkungan berikut:
 | Variabel | Default | Fungsi |
 | -------- | ------- | ------ |
 | `PORT` | `3001` | Port server Express. |
-| `FINANCE_DB_PATH` | `server/finance.db` | Lokasi file database SQLite (mis. volume persisten di hosting). |
+| `TURSO_DATABASE_URL` | – | URL database Turso (`libsql://...` atau `https://...`). **Wajib diisi.** |
+| `TURSO_AUTH_TOKEN` | – | Token autentikasi database Turso. **Wajib diisi.** |
 | `ALLOW_SIGNUP` | `1` | Set `0` untuk menutup pendaftaran akun baru (mode undangan). |
 | `TRUST_PROXY` | – | Set `1` bila berjalan di belakang reverse proxy agar IP asli terbaca pembatas percobaan login. |
 | `PUBLIC_URL` | dari request | Alamat **server/API** ini. Dipakai untuk `redirect_uri` OAuth dan sebagai cadangan alamat frontend. |
@@ -81,7 +82,15 @@ Saat login, GitHub meminta izin `read:user`, `user:email`, dan `read:org`; beri 
 
 ## Deployment
 
-Aplikasi terdiri dari **frontend** (Vite/React) dan **backend** (Express + SQLite). Backend menyimpan data di file SQLite sehingga butuh host dengan **penyimpanan persisten** — tidak cocok dengan Vercel (serverless, filesystem sementara).
+Aplikasi terdiri dari **frontend** (Vite/React) dan **backend** (Express). Backend menyimpan data di **Turso** (SQLite cloud), jadi tidak butuh penyimpanan persisten di host — backend boleh dijalankan sebagai serverless (Vercel/Render/dsb).
+
+### 0. Siapkan database Turso
+1. Daftar di [Turso](https://turso.tech) dan buat database baru (mis. `finance`).
+2. Salin **URL database** (`libsql://finance-<user>.turso.io`) dan buat **auth token** (`turso db tokens create finance`).
+3. Isi keduanya di `server/.env`:
+   - `TURSO_DATABASE_URL`
+   - `TURSO_AUTH_TOKEN`
+4. Tabel dibuat otomatis saat server pertama kali berjalan (migrasi idempoten).
 
 ### 1. Frontend ke Vercel
 1. Di dashboard Vercel: **New Project** → import repository ini.
@@ -90,9 +99,10 @@ Aplikasi terdiri dari **frontend** (Vite/React) dan **backend** (Express + SQLit
    - `VITE_API_URL` = alamat backend + `/api`, mis. `https://api.domainmu.com/api`.
 4. Deploy — Vercel menjalankan `vite build` dan menyajikan hasil di `client/dist`.
 
-### 2. Backend ke host ber-penyimpanan persisten (Railway / Fly.io / Koyeb)
+### 2. Backend ke Vercel / Render / host serverless
 1. Deploy folder `server/` (Node, `npm install`, `npm start`).
 2. Set environment variable di host backend:
+   - `TURSO_DATABASE_URL` dan `TURSO_AUTH_TOKEN`.
    - `PUBLIC_URL` = alamat backend, mis. `https://api.domainmu.com`.
    - `APP_URL` = alamat frontend Vercel, mis. `https://domainmu.vercel.app`.
    - `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_ORG`.
@@ -145,7 +155,7 @@ CORS backend sudah terbuka (`cors()`), jadi panggilan dari domain Vercel ke back
 ### Data & keamanan
 - Recycle bin 30 hari: transaksi, transaksi berulang, transfer, dan rekening yang terhapus bisa dipulihkan.
 - Backup & restore seluruh data ke file JSON (per akun — restore tidak menyentuh data pengguna lain).
-- Backup otomatis file database ke `server/backups/` (setiap 6 jam, menyimpan 14 salinan terakhir).
+- Pencadangan database otomatis ditangani Turso (point-in-time restore).
 - Mode tema terang/gelap/otomatis (mengikuti sistem).
 
 ### Antarmuka & panduan

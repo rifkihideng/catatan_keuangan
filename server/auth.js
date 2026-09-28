@@ -1,6 +1,6 @@
 // Modul autentikasi: hashing password, token sesi, dan pembatas percobaan login.
 // Hanya memakai modul bawaan Node (node:crypto) supaya tidak menambah dependensi.
-import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
+import { randomBytes, randomInt, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { db } from './db.js';
 
 const SCRYPT_KEYLEN = 64;
@@ -91,35 +91,8 @@ export function validateCredentials({ email, name, password }, { requireName = f
 }
 
 // --- Pembatas percobaan (rate limit) --------------------------------------
-
-const attempts = new Map();
-const WINDOW_MS = 15 * 60 * 1000;
-const MAX_ATTEMPTS = 10;
-
-// Batas jumlah percobaan per kunci dalam satu jendela waktu.
-export function tooManyAttempts(key, max = MAX_ATTEMPTS) {
-  const now = Date.now();
-  const entry = attempts.get(key);
-  if (!entry || now > entry.resetAt) return false;
-  return entry.count >= max;
-}
-
-export function recordFailedAttempt(key, windowMs = WINDOW_MS) {
-  const now = Date.now();
-  const entry = attempts.get(key);
-  if (!entry || now > entry.resetAt) {
-    attempts.set(key, { count: 1, resetAt: now + windowMs });
-  } else {
-    entry.count += 1;
-  }
-  if (attempts.size > 5000) {
-    for (const [k, v] of attempts) if (now > v.resetAt) attempts.delete(k);
-  }
-}
-
-export function clearAttempts(key) {
-  attempts.delete(key);
-}
+// Implementasi ada di rateLimit.js (Redis/Upstash bila tersedia, fallback memori).
+export { tooManyAttempts, recordFailedAttempt, clearAttempts } from './rateLimit.js';
 
 // Kunci pembatas: gabungan IP dan email agar satu penyerang tidak bisa
 // mengunci akun orang lain hanya dengan menebak emailnya.
@@ -139,28 +112,61 @@ export const PURPOSE = {
   resetPassword: 'reset_password',
   verifyEmail: 'verify_email',
   oauthLogin: 'oauth_login',
+  twoFactor: 'two_factor',
+  twoFactorPending: 'two_factor_pending',
+  twoFactorSetup: 'two_factor_setup',
 };
+
+export const TWO_FACTOR_MINUTES = Number(process.env.TWO_FACTOR_MINUTES) || 5;
 
 function expirySql(minutes) {
   return `datetime('now', 'localtime', '+${Number(minutes)} minutes')`;
 }
 
 // Terbitkan token baru; token lama untuk tujuan yang sama dibatalkan.
-export function issueAuthToken(userId, purpose, minutes) {
-  const { token, tokenHash } = createToken();
-  db.prepare("DELETE FROM auth_tokens WHERE expires_at <= datetime('now', 'localtime')").run();
-  db.prepare('DELETE FROM auth_tokens WHERE user_id = ? AND purpose = ?').run(userId, purpose);
-  db.prepare(
-    `INSERT INTO auth_tokens (token_hash, user_id, purpose, expires_at) VALUES (?, ?, ?, ${expirySql(minutes)})`
-  ).run(tokenHash, userId, purpose);
-  return token;
+// `secret` opsional: untuk OTP/kode yang nilainya ditentukan sendiri (mis. 6 digit).
+export async function issueAuthToken(userId, purpose, minutes, secret = null) {
+  const value = secret ?? createToken().token;
+  const tokenHash = hashToken(value);
+  await db.prepare("DELETE FROM auth_tokens WHERE expires_at <= datetime('now', 'localtime')").run();
+  await db.prepare('DELETE FROM auth_tokens WHERE user_id = ? AND purpose = ?').run(userId, purpose);
+  await db
+    .prepare(
+      `INSERT INTO auth_tokens (token_hash, user_id, purpose, expires_at) VALUES (?, ?, ?, ${expirySql(minutes)})`
+    )
+    .run(tokenHash, userId, purpose);
+  return value;
+}
+
+// Kode OTP 6 digit (untuk verifikasi 2 langkah).
+export function generateOtpCode() {
+  return String(randomInt(0, 1000000)).padStart(6, '0');
+}
+
+// Pakai kode OTP (dibandingkan hash-nya, sekali pakai). Kembalikan true bila sah.
+export async function consumeOtp(userId, code, purpose) {
+  const value = String(code ?? '').trim();
+  if (!value) return false;
+  const tokenHash = hashToken(value);
+  const row = await db
+    .prepare(
+      `SELECT user_id FROM auth_tokens
+       WHERE token_hash = ? AND purpose = ? AND user_id = ? AND used_at IS NULL
+         AND expires_at > datetime('now', 'localtime')`
+    )
+    .get(tokenHash, purpose, userId);
+  if (!row) return false;
+  await db
+    .prepare("UPDATE auth_tokens SET used_at = datetime('now', 'localtime') WHERE token_hash = ?")
+    .run(tokenHash);
+  return true;
 }
 
 // Cek token tanpa memakainya (mis. untuk menampilkan form di klien).
-export function peekAuthToken(token, purpose) {
+export async function peekAuthToken(token, purpose) {
   if (!token) return null;
   return (
-    db
+    (await db
       .prepare(
         `SELECT t.user_id, u.email, u.name
          FROM auth_tokens t
@@ -168,15 +174,15 @@ export function peekAuthToken(token, purpose) {
          WHERE t.token_hash = ? AND t.purpose = ? AND t.used_at IS NULL
            AND t.expires_at > datetime('now', 'localtime')`
       )
-      .get(hashToken(token), purpose) || null
+      .get(hashToken(token), purpose)) || null
   );
 }
 
 // Pakai token: sekali pakai, langsung ditandai terpakai. Mengembalikan user_id.
-export function consumeAuthToken(token, purpose) {
+export async function consumeAuthToken(token, purpose) {
   if (!token) return null;
   const tokenHash = hashToken(token);
-  const row = db
+  const row = await db
     .prepare(
       `SELECT user_id FROM auth_tokens
        WHERE token_hash = ? AND purpose = ? AND used_at IS NULL
@@ -184,9 +190,9 @@ export function consumeAuthToken(token, purpose) {
     )
     .get(tokenHash, purpose);
   if (!row) return null;
-  db.prepare("UPDATE auth_tokens SET used_at = datetime('now', 'localtime') WHERE token_hash = ?").run(
-    tokenHash
-  );
+  await db
+    .prepare("UPDATE auth_tokens SET used_at = datetime('now', 'localtime') WHERE token_hash = ?")
+    .run(tokenHash);
   return row.user_id;
 }
 

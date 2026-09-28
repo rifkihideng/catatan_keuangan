@@ -2,50 +2,24 @@
 // Kosong = pakai /api (diproxy oleh Vite saat dev).
 const BASE = import.meta.env.VITE_API_URL || '/api';
 export const API_BASE = BASE;
-const TOKEN_KEY = 'auth_token';
 
-// Dipicu saat server menolak token (401) agar App bisa menampilkan layar masuk.
+// Dipicu saat server menolak sesi (401) agar App bisa menampilkan layar masuk.
 export const AUTH_UNAUTHORIZED_EVENT = 'auth:unauthorized';
 
-let token = null;
-try {
-  token = localStorage.getItem(TOKEN_KEY) || null;
-} catch {
-  token = null;
-}
-
-export function getToken() {
-  return token;
-}
-
-export function setToken(value) {
-  token = value || null;
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    // localStorage bisa diblokir (mode privat) — sesi tetap berlaku sampai tab ditutup
-  }
-}
-
-export function clearToken() {
-  setToken(null);
-}
-
+// Token sesi dikirim lewat cookie httpOnly (diatur server), jadi tidak perlu
+// disimpan/dibaca di sini. Semua permintaan menyertakan cookie lewat credentials.
 async function request(url, options = {}, handleUnauthorized = true) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   let res;
   try {
-    res = await fetch(`${BASE}${url}`, { ...options, headers });
+    res = await fetch(`${BASE}${url}`, { ...options, headers, credentials: 'include' });
   } catch {
     throw new Error('Tidak dapat terhubung ke server');
   }
 
   if (res.status === 401 && handleUnauthorized) {
     const err = await res.json().catch(() => ({}));
-    clearToken();
     window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
     throw new Error(err.error || 'Sesi berakhir, silakan masuk kembali');
   }
@@ -78,6 +52,9 @@ export const logout = () => request('/auth/logout', { method: 'POST' });
 
 export const getMe = () => request('/auth/me');
 
+// Periksa sesi saat bootstrap tanpa memicu event "sesi berakhir".
+export const getMeSilent = () => request('/auth/me', {}, false);
+
 export const changePassword = (currentPassword, newPassword) =>
   request('/auth/password', {
     method: 'PUT',
@@ -103,6 +80,24 @@ export const resendVerification = () => request('/auth/resend-verification', { m
 
 export const exchangeGithubCode = (code) =>
   request('/auth/github/exchange', { method: 'POST', body: JSON.stringify({ code }) }, false);
+
+// --- Verifikasi 2 langkah (2FA) ---
+export const verifyTwoFactor = (twoFactorToken, code, remember = false) =>
+  request(
+    '/auth/2fa/verify',
+    { method: 'POST', body: JSON.stringify({ twoFactorToken, code, remember }) },
+    false
+  );
+
+export const getTwoFactor = () => request('/auth/2fa');
+
+export const enableTwoFactor = () => request('/auth/2fa/enable', { method: 'POST' });
+
+export const confirmTwoFactor = (code) =>
+  request('/auth/2fa/confirm', { method: 'POST', body: JSON.stringify({ code }) });
+
+export const disableTwoFactor = (password) =>
+  request('/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ password }) });
 
 export const getTransactions = ({ month, from, to } = {}) => {
   const params = new URLSearchParams();

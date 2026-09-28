@@ -1,81 +1,112 @@
-import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
+// Koneksi database: Turso (libsql).
+// Kredensial dibaca dari environment variable TURSO_DATABASE_URL dan
+// TURSO_AUTH_TOKEN (lihat .env.example). Turso memakai SQLite di sisi server,
+// jadi sintaks SQL yang dipakai tetap SQLite.
+import { createClient } from '@libsql/client';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const url = process.env.TURSO_DATABASE_URL;
+const authToken = process.env.TURSO_AUTH_TOKEN;
 
-// Lokasi database bisa diatur lewat FINANCE_DB_PATH (mis. volume persisten di
-// hosting, atau database terpisah saat pengujian).
-const dbPath = process.env.FINANCE_DB_PATH
-  ? resolve(process.env.FINANCE_DB_PATH)
-  : join(__dirname, 'finance.db');
-const db = new DatabaseSync(dbPath);
-db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA foreign_keys = ON;');
+if (!url || !authToken) {
+  console.error(
+    '❌ Turso belum dikonfigurasi. Isi TURSO_DATABASE_URL dan TURSO_AUTH_TOKEN di server/.env'
+  );
+  process.exit(1);
+}
 
-// Tabel akun pengguna & sesi login (multi-user).
-// Password disimpan sebagai hash scrypt (lihat auth.js), token sesi disimpan dalam bentuk hash.
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
+const client = createClient({ url, authToken });
+
+// ---------------------------------------------------------------------------
+// Skema idempoten. Karena database Turso baru dibuat kosong, tabel langsung
+// dibuat dalam bentuk final (sudah berisi user_id + deleted_at), tanpa
+// migrasi bertahap dari skema lama.
+// ---------------------------------------------------------------------------
+
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
     name TEXT,
     password_hash TEXT NOT NULL,
+    email_verified_at TEXT,
+    two_factor_enabled INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-  );
+  )`,
 
-  CREATE TABLE IF NOT EXISTS sessions (
+  `CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     expires_at TEXT NOT NULL,
     user_agent TEXT
-  );
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
 
-  CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+  `CREATE TABLE IF NOT EXISTS accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    initial_balance REAL NOT NULL DEFAULT 0,
+    kind TEXT,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    deleted_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id)`,
 
-  CREATE TABLE IF NOT EXISTS transactions (
+  `CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
     amount REAL NOT NULL,
     category TEXT,
     description TEXT,
-    date TEXT NOT NULL
-  );
+    date TEXT NOT NULL,
+    account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    deleted_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date)`,
+  `CREATE INDEX IF NOT EXISTS idx_tx_account ON transactions(account_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_tx_deleted ON transactions(deleted_at)`,
 
-  CREATE TABLE IF NOT EXISTS categories (
+  `CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
     name TEXT NOT NULL,
-    UNIQUE (type, name)
-  );
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE (user_id, type, name)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id)`,
 
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT
-  );
+  `CREATE TABLE IF NOT EXISTS settings (
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT,
+    PRIMARY KEY (user_id, key)
+  )`,
 
-  CREATE TABLE IF NOT EXISTS category_budgets (
-    category TEXT PRIMARY KEY,
-    amount REAL NOT NULL
-  );
+  `CREATE TABLE IF NOT EXISTS category_budgets (
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    category TEXT NOT NULL,
+    amount REAL NOT NULL,
+    PRIMARY KEY (user_id, category)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_category_budgets_user ON category_budgets(user_id)`,
 
-  CREATE TABLE IF NOT EXISTS accounts (
+  `CREATE TABLE IF NOT EXISTS transfers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    initial_balance REAL NOT NULL DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS transfers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    from_account_id INTEGER NOT NULL,
-    to_account_id INTEGER NOT NULL,
+    from_account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    to_account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     amount REAL NOT NULL,
     note TEXT,
-    date TEXT NOT NULL
-  );
+    date TEXT NOT NULL,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    deleted_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_transfers_user ON transfers(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_trf_from ON transfers(from_account_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_trf_to ON transfers(to_account_id)`,
 
-  CREATE TABLE IF NOT EXISTS recurring (
+  `CREATE TABLE IF NOT EXISTS recurring (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
     amount REAL NOT NULL,
@@ -84,231 +115,137 @@ db.exec(`
     account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
     frequency TEXT NOT NULL DEFAULT 'monthly' CHECK (frequency IN ('daily', 'weekly', 'monthly')),
     next_date TEXT NOT NULL,
-    active INTEGER NOT NULL DEFAULT 1
+    active INTEGER NOT NULL DEFAULT 1,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    deleted_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_recurring_user ON recurring(user_id)`,
+
+  `CREATE TABLE IF NOT EXISTS auth_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    purpose TEXT NOT NULL CHECK (purpose IN ('reset_password', 'verify_email', 'oauth_login', 'two_factor', 'two_factor_pending', 'two_factor_setup')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id, purpose)`,
+  `CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires ON auth_tokens(expires_at)`,
+
+  `CREATE TABLE IF NOT EXISTS auth_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    event TEXT NOT NULL,
+    detail TEXT,
+    ip TEXT,
+    user_agent TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_auth_events_user ON auth_events(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_auth_events_created ON auth_events(created_at)`,
+];
+
+for (const sql of SCHEMA) {
+  await client.execute(sql);
+}
+
+// Migrasi basis data lama: tambah kolom 2FA bila belum ada.
+try {
+  await client.execute(
+    `ALTER TABLE users ADD COLUMN two_factor_enabled INTEGER NOT NULL DEFAULT 0`
   );
-`);
-
-// Tambah kolom account_id pada transaksi jika belum ada
-const txColumns = db.prepare('PRAGMA table_info(transactions)').all();
-if (!txColumns.some((c) => c.name === 'account_id')) {
-  db.exec('ALTER TABLE transactions ADD COLUMN account_id INTEGER');
+} catch {
+  // Kolom sudah ada — abaikan.
 }
 
-// Tambah kolom kind pada rekening jika belum ada (cash/bank/ewallet)
-const accColumns = db.prepare('PRAGMA table_info(accounts)').all();
-if (!accColumns.some((c) => c.name === 'kind')) {
-  db.exec('ALTER TABLE accounts ADD COLUMN kind TEXT');
-  db.prepare("UPDATE accounts SET kind = 'cash' WHERE name = 'Tunai'").run();
-  db.prepare("UPDATE accounts SET kind = 'ewallet' WHERE name = 'E-Wallet'").run();
-  db.prepare("UPDATE accounts SET kind = 'bank' WHERE kind IS NULL").run();
-}
-
-// Tambahkan foreign key pada transactions.account_id (jika belum ada)
-const txFks = db.prepare('PRAGMA foreign_key_list(transactions)').all();
-if (txFks.length === 0) {
-  db.exec('PRAGMA foreign_keys = OFF;');
-  db.exec(`
-    BEGIN;
-    CREATE TABLE transactions_new (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-      amount REAL NOT NULL,
-      category TEXT,
-      description TEXT,
-      date TEXT NOT NULL,
-      account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL
-    );
-    INSERT INTO transactions_new (id, type, amount, category, description, date, account_id)
-      SELECT id, type, amount, category, description, date, account_id FROM transactions;
-    DROP TABLE transactions;
-    ALTER TABLE transactions_new RENAME TO transactions;
-    COMMIT;
-  `);
-  db.exec('PRAGMA foreign_keys = ON;');
-}
-
-// Tambahkan foreign key pada transfers (jika belum ada)
-const trfFks = db.prepare('PRAGMA foreign_key_list(transfers)').all();
-if (trfFks.length === 0) {
-  db.exec('PRAGMA foreign_keys = OFF;');
-  db.exec(`
-    BEGIN;
-    CREATE TABLE transfers_new (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      from_account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-      to_account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-      amount REAL NOT NULL,
-      note TEXT,
-      date TEXT NOT NULL
-    );
-    INSERT INTO transfers_new (id, from_account_id, to_account_id, amount, note, date)
-      SELECT id, from_account_id, to_account_id, amount, note, date FROM transfers;
-    DROP TABLE transfers;
-    ALTER TABLE transfers_new RENAME TO transfers;
-    COMMIT;
-  `);
-  db.exec('PRAGMA foreign_keys = ON;');
-}
-
-// Index untuk mempercepat query
-const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all();
-const indexNames = new Set(indexes.map((i) => i.name));
-if (!indexNames.has('idx_tx_date')) {
-  db.exec('CREATE INDEX idx_tx_date ON transactions(date)');
-}
-if (!indexNames.has('idx_tx_account')) {
-  db.exec('CREATE INDEX idx_tx_account ON transactions(account_id)');
-}
-if (!indexNames.has('idx_trf_from')) {
-  db.exec('CREATE INDEX idx_trf_from ON transfers(from_account_id)');
-}
-if (!indexNames.has('idx_trf_to')) {
-  db.exec('CREATE INDEX idx_trf_to ON transfers(to_account_id)');
-}
-
-// Isi kategori default jika masih kosong
-const categoryCount = db.prepare('SELECT COUNT(*) AS c FROM categories').get().c;
-if (categoryCount === 0) {
-  const insert = db.prepare('INSERT INTO categories (type, name) VALUES (?, ?)');
-  for (const name of ['Gaji', 'Bonus', 'Investasi', 'Lainnya']) insert.run('income', name);
-  for (const name of ['Makanan', 'Transport', 'Tagihan', 'Belanja', 'Hiburan', 'Lainnya']) {
-    insert.run('expense', name);
-  }
-}
-
-// Isi rekening default jika masih kosong
-const accountCount = db.prepare('SELECT COUNT(*) AS c FROM accounts').get().c;
-if (accountCount === 0) {
-  const insertAccount = db.prepare(
-    'INSERT INTO accounts (name, initial_balance, kind) VALUES (?, 0, ?)'
-  );
-  insertAccount.run('Tunai', 'cash');
-  insertAccount.run('Bank', 'bank');
-  insertAccount.run('E-Wallet', 'ewallet');
-}
-
-// Kolom deleted_at untuk recycle bin (soft delete transaksi)
-const txDeletedCols = db.prepare('PRAGMA table_info(transactions)').all();
-if (!txDeletedCols.some((c) => c.name === 'deleted_at')) {
-  db.exec('ALTER TABLE transactions ADD COLUMN deleted_at TEXT');
-}
-const delIdx = db
-  .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_tx_deleted'")
-  .get();
-if (!delIdx) {
-  db.exec('CREATE INDEX idx_tx_deleted ON transactions(deleted_at)');
-}
-
-// Kolom deleted_at untuk recycle bin pada tabel lain (rekening, transfer, berulang)
-for (const table of ['accounts', 'transfers', 'recurring']) {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
-  if (!cols.some((c) => c.name === 'deleted_at')) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN deleted_at TEXT`);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Migrasi multi-user: setiap baris data dimiliki satu pengguna (user_id).
-// Baris lama dibiarkan NULL dan diadopsi oleh pengguna pertama yang mendaftar
-// (lihat adoptLegacyData), sehingga data yang sudah ada tidak hilang.
-// ---------------------------------------------------------------------------
-
-function hasColumn(table, column) {
-  return db
-    .prepare(`PRAGMA table_info(${table})`)
-    .all()
-    .some((c) => c.name === column);
-}
-
-function addUserColumn(table) {
-  if (!hasColumn(table, 'user_id')) {
-    // ALTER TABLE ... ADD COLUMN dengan REFERENCES sah selama default-nya NULL.
-    db.exec(`ALTER TABLE ${table} ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE`);
-  }
-}
-
-// Tabel yang butuh user_id langsung bisa ditambah kolomnya.
-for (const table of ['transactions', 'accounts', 'transfers', 'recurring']) {
-  addUserColumn(table);
-}
-
-// Tabel dengan UNIQUE / PRIMARY KEY harus dibangun ulang agar batasannya
-// berlaku per pengguna (UNIQUE(user_id, ...)), bukan global.
-function rebuildTable(table, createSql, columns) {
-  db.exec('PRAGMA foreign_keys = OFF;');
+// Migrasi basis data lama: tabel auth_tokens hanya mengizinkan 3 purpose.
+// Perluas CHECK-nya agar purpose verifikasi 2 langkah bisa dipakai.
+const authTokensSql = String(
+  (
+    await client.execute(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'auth_tokens'"
+    )
+  ).rows?.[0]?.sql || ''
+);
+if (authTokensSql && !authTokensSql.includes('two_factor')) {
   try {
-    db.exec('BEGIN');
-    db.exec(createSql);
-    db.exec(
-      `INSERT INTO ${table}_new (${columns.join(', ')}) SELECT ${columns.join(', ')} FROM ${table}`
+    await client.batch(
+      [
+        `CREATE TABLE auth_tokens_new (
+          token_hash TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          purpose TEXT NOT NULL CHECK (purpose IN ('reset_password','verify_email','oauth_login','two_factor','two_factor_pending','two_factor_setup')),
+          created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+          expires_at TEXT NOT NULL,
+          used_at TEXT
+        )`,
+        'INSERT INTO auth_tokens_new SELECT token_hash, user_id, purpose, created_at, expires_at, used_at FROM auth_tokens',
+        'DROP TABLE auth_tokens',
+        'ALTER TABLE auth_tokens_new RENAME TO auth_tokens',
+        'CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id, purpose)',
+        'CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires ON auth_tokens(expires_at)',
+      ],
+      'write'
     );
-    db.exec(`DROP TABLE ${table}`);
-    db.exec(`ALTER TABLE ${table}_new RENAME TO ${table}`);
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  } finally {
-    db.exec('PRAGMA foreign_keys = ON;');
+    console.log('✅ Migrasi auth_tokens untuk 2FA selesai.');
+  } catch (e) {
+    console.error('⚠️ Gagal memigrasi auth_tokens:', e.message);
   }
 }
 
-// categories: UNIQUE(type, name) → UNIQUE(user_id, type, name)
-if (!hasColumn('categories', 'user_id')) {
-  rebuildTable(
-    'categories',
-    `CREATE TABLE categories_new (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-      name TEXT NOT NULL,
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      UNIQUE (user_id, type, name)
-    )`,
-    ['id', 'type', 'name']
-  );
-}
+// ---------------------------------------------------------------------------
+// Lapisan antarmuka async yang dipakai seluruh server. Bentuknya menyerupai
+// node:sqlite (prepare().get/all/run) supaya perubahan kode di file lain
+// seminimal mungkin — hanya perlu ditambah `await` + handler `async`.
+// ---------------------------------------------------------------------------
 
-// settings: PRIMARY KEY(key) → PRIMARY KEY(user_id, key)
-if (!hasColumn('settings', 'user_id')) {
-  rebuildTable(
-    'settings',
-    `CREATE TABLE settings_new (
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      key TEXT NOT NULL,
-      value TEXT,
-      PRIMARY KEY (user_id, key)
-    )`,
-    ['key', 'value']
-  );
-}
+export const db = {
+  // Jalankan satu pernyataan; kembalikan { rows, rowsAffected, lastInsertRowid }.
+  async execute(sql, args = []) {
+    const r = await client.execute({ sql, args });
+    return {
+      rows: r.rows,
+      rowsAffected: Number(r.rowsAffected),
+      lastInsertRowid: Number(r.lastInsertRowid),
+    };
+  },
 
-// category_budgets: PRIMARY KEY(category) → PRIMARY KEY(user_id, category)
-if (!hasColumn('category_budgets', 'user_id')) {
-  rebuildTable(
-    'category_budgets',
-    `CREATE TABLE category_budgets_new (
-      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      category TEXT NOT NULL,
-      amount REAL NOT NULL,
-      PRIMARY KEY (user_id, category)
-    )`,
-    ['category', 'amount']
-  );
-}
+  // prepare(sql) → { get, all, run } (semuanya async).
+  prepare(sql) {
+    return {
+      async get(...args) {
+        const r = await client.execute({ sql, args });
+        return r.rows[0];
+      },
+      async all(...args) {
+        const r = await client.execute({ sql, args });
+        return r.rows;
+      },
+      async run(...args) {
+        const r = await client.execute({ sql, args });
+        return { lastInsertRowid: Number(r.lastInsertRowid), changes: Number(r.rowsAffected) };
+      },
+    };
+  },
 
-// Index per pengguna supaya query terfilter tetap cepat saat data bertambah
-for (const table of [
-  'transactions',
-  'categories',
-  'accounts',
-  'transfers',
-  'recurring',
-  'category_budgets',
-]) {
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_${table}_user ON ${table}(user_id)`);
-}
+  // Jalankan pernyataan tunggal (dipakai untuk DDL). Transaksi tidak lagi
+  // memakai BEGIN/COMMIT — gunakan db.batch untuk operasi atomik.
+  async exec(sql, args = []) {
+    const r = await client.execute({ sql, args });
+    return r;
+  },
 
-// Tabel kanonik yang ikut diadopsi pengguna pertama
+  // Transaksi atomik: semua pernyataan dijalankan all-or-nothing.
+  // statements: [{ sql, args }]
+  async batch(statements) {
+    return client.batch(statements, 'write');
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Migrasi data lama & data awal pengguna baru.
+// ---------------------------------------------------------------------------
+
 const USER_SCOPED_TABLES = [
   'accounts',
   'categories',
@@ -319,76 +256,42 @@ const USER_SCOPED_TABLES = [
   'recurring',
 ];
 
-// Apakah masih ada data lama yang belum punya pemilik?
-export function hasLegacyData() {
-  return USER_SCOPED_TABLES.some(
-    (t) => Number(db.prepare(`SELECT COUNT(*) AS c FROM ${t} WHERE user_id IS NULL`).get().c) > 0
-  );
+// Apakah masih ada data lama yang belum punya pemilik? (Tidak terjadi pada
+// database Turso baru; disimpan untuk kompatibilitas alur registrasi.)
+export async function hasLegacyData() {
+  for (const t of USER_SCOPED_TABLES) {
+    const r = await client.execute({
+      sql: `SELECT COUNT(*) AS c FROM ${t} WHERE user_id IS NULL`,
+    });
+    if (Number(r.rows[0]?.c) > 0) return true;
+  }
+  return false;
 }
 
 // Pindahkan seluruh data lama (user_id NULL) ke pengguna pertama yang mendaftar.
-export function adoptLegacyData(userId) {
-  db.exec('BEGIN');
-  try {
-    for (const table of USER_SCOPED_TABLES) {
-      db.prepare(`UPDATE ${table} SET user_id = ? WHERE user_id IS NULL`).run(userId);
-    }
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
+export async function adoptLegacyData(userId) {
+  await client.batch(
+    USER_SCOPED_TABLES.map((table) => ({
+      sql: `UPDATE ${table} SET user_id = ? WHERE user_id IS NULL`,
+      args: [userId],
+    })),
+    'write'
+  );
 }
 
 // Data awal untuk pengguna baru (kategori & rekening bawaan).
-export function seedUserDefaults(userId) {
-  db.exec('BEGIN');
-  try {
-    const insertCategory = db.prepare(
-      'INSERT INTO categories (type, name, user_id) VALUES (?, ?, ?)'
-    );
-    for (const name of ['Gaji', 'Bonus', 'Investasi', 'Lainnya']) {
-      insertCategory.run('income', name, userId);
-    }
-    for (const name of ['Makanan', 'Transport', 'Tagihan', 'Belanja', 'Hiburan', 'Lainnya']) {
-      insertCategory.run('expense', name, userId);
-    }
-    const insertAccount = db.prepare(
-      'INSERT INTO accounts (name, initial_balance, kind, user_id) VALUES (?, 0, ?, ?)'
-    );
-    insertAccount.run('Tunai', 'cash', userId);
-    insertAccount.run('Bank', 'bank', userId);
-    insertAccount.run('E-Wallet', 'ewallet', userId);
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
+export async function seedUserDefaults(userId) {
+  const statements = [];
+  const insertCategorySql = 'INSERT INTO categories (type, name, user_id) VALUES (?, ?, ?)';
+  for (const name of ['Gaji', 'Bonus', 'Investasi', 'Lainnya']) {
+    statements.push({ sql: insertCategorySql, args: ['income', name, userId] });
   }
+  for (const name of ['Makanan', 'Transport', 'Tagihan', 'Belanja', 'Hiburan', 'Lainnya']) {
+    statements.push({ sql: insertCategorySql, args: ['expense', name, userId] });
+  }
+  const insertAccountSql = 'INSERT INTO accounts (name, initial_balance, kind, user_id) VALUES (?, 0, ?, ?)';
+  statements.push({ sql: insertAccountSql, args: ['Tunai', 'cash', userId] });
+  statements.push({ sql: insertAccountSql, args: ['Bank', 'bank', userId] });
+  statements.push({ sql: insertAccountSql, args: ['E-Wallet', 'ewallet', userId] });
+  await client.batch(statements, 'write');
 }
-
-// ---------------------------------------------------------------------------
-// Verifikasi email & token sekali pakai (reset password, verifikasi email,
-// kode login OAuth).
-// ---------------------------------------------------------------------------
-
-if (!hasColumn('users', 'email_verified_at')) {
-  db.exec('ALTER TABLE users ADD COLUMN email_verified_at TEXT');
-  // Akun yang sudah ada sebelum fitur verifikasi dianggap sudah terverifikasi.
-  db.prepare("UPDATE users SET email_verified_at = datetime('now', 'localtime')").run();
-}
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS auth_tokens (
-    token_hash TEXT PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    purpose TEXT NOT NULL CHECK (purpose IN ('reset_password', 'verify_email', 'oauth_login')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-    expires_at TEXT NOT NULL,
-    used_at TEXT
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id, purpose);
-  CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires ON auth_tokens(expires_at);
-`);
-
-export { db, dbPath };

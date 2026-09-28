@@ -9,7 +9,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { ForgotForm, ResetForm } from './PasswordResetForms';
-import { API_BASE, login, register, setToken } from './api';
+import { API_BASE, login, register, verifyTwoFactor } from './api';
 
 const REMEMBER_KEY = 'auth_remember';
 
@@ -39,6 +39,10 @@ export default function AuthScreen({
   });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Langkah verifikasi 2 langkah (OTP email)
+  const [otpPending, setOtpPending] = useState('');
+  const [otpEmail, setOtpEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
 
   const isRegister = mode === 'register';
   const minPassword = config?.minPasswordLength || 8;
@@ -82,10 +86,32 @@ export default function AuthScreen({
       const data = isRegister
         ? await register({ email: email.trim(), name: name.trim(), password })
         : await login(email.trim(), password, remember);
-      setToken(data.token);
+      if (data.twoFactorRequired) {
+        setOtpPending(data.twoFactorToken);
+        setOtpEmail(data.email || email.trim());
+        setOtpCode('');
+        setError('');
+        setBusy(false);
+        return;
+      }
       onAuthenticated(data.user);
     } catch (err) {
       setError(err.message || 'Gagal masuk');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleOtpSubmit(e) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const data = await verifyTwoFactor(otpPending, otpCode, remember);
+      onAuthenticated(data.user);
+    } catch (err) {
+      setError(err.message || 'Verifikasi gagal');
     } finally {
       setBusy(false);
     }
@@ -123,8 +149,60 @@ export default function AuthScreen({
         </div>
 
         <div className="card p-5 sm:p-6">
+          {/* ---- Verifikasi 2 langkah (OTP) ---- */}
+          {view === 'auth' && otpPending && (
+            <form onSubmit={handleOtpSubmit} className="space-y-4">
+              {error && (
+                <div
+                  role="alert"
+                  className="mb-2 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/60 dark:text-rose-300"
+                >
+                  <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2.5 text-sm text-indigo-700 dark:border-indigo-900/50 dark:bg-indigo-950/50 dark:text-indigo-300">
+                Kode verifikasi sudah dikirim ke{' '}
+                <span className="font-semibold">{otpEmail}</span>. Masukkan kode 6 digit untuk
+                masuk.
+              </div>
+              <div>
+                <label className="label" htmlFor="otp-code">
+                  Kode verifikasi
+                </label>
+                <input
+                  id="otp-code"
+                  className="input text-center text-2xl tracking-[0.5em]"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
+                  placeholder="••••••"
+                  autoFocus
+                  required
+                />
+              </div>
+              <button type="submit" disabled={busy} className="btn btn-primary w-full py-2.5">
+                {busy ? 'Memverifikasi…' : 'Verifikasi & Masuk'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOtpPending('');
+                  setOtpCode('');
+                  setError('');
+                }}
+                className="btn btn-secondary w-full py-2.5"
+              >
+                Kembali
+              </button>
+            </form>
+          )}
+
           {/* ---- Masuk / Daftar ---- */}
-          {view === 'auth' && (
+          {view === 'auth' && !otpPending && (
             <>
               {signupAllowed && (
                 <div
