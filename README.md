@@ -1,6 +1,6 @@
 # 💰 Catatan Keuangan Pribadi
 
-Aplikasi pencatat keuangan pribadi: pemasukan & pengeluaran, anggaran, multi-rekening, laporan per kategori, dan cadangan data otomatis.
+Aplikasi pencatat keuangan pribadi: pemasukan & pengeluaran, anggaran, multi-rekening, hutang-piutang, aset & liabilitas, tag transaksi, lampiran struk, laporan per kategori, dan cadangan data.
 
 ## Teknologi
 - **Frontend**: Vite + React 19 + Tailwind CSS v4 + Recharts
@@ -113,9 +113,9 @@ CORS backend sudah terbuka (`cors()`), jadi panggilan dari domain Vercel ke back
 ## Fitur
 
 ### Transaksi & pencatatan
-- Tambah, edit, dan hapus transaksi (pemasukan/pengeluaran) dengan kategori, tanggal, keterangan, dan rekening.
-- Pencarian, filter kategori, filter bulan/rentang tanggal (bisa satu sisi), dan urutkan (tanggal/nominal/kategori).
-- Import dari CSV dan export ke CSV/PDF.
+- Tambah, edit, dan hapus transaksi (pemasukan/pengeluaran) dengan kategori, tanggal, keterangan, tag, lampiran struk (foto/gambar), dan rekening.
+- Pencarian teks (kategori/keterangan/tag), filter kategori, tipe, rekening, filter bulan/rentang tanggal (bisa satu sisi), dan urutkan (tanggal/nominal/kategori).
+- Import dari CSV dan export ke CSV/Excel/PDF.
 
 ### Kategori
 - Tambah kategori baru.
@@ -123,14 +123,20 @@ CORS backend sudah terbuka (`cors()`), jadi panggilan dari domain Vercel ke back
 - Hapus kategori.
 
 ### Anggaran & target
-- Anggaran bulanan dengan progress bar & peringatan saat melebihi.
-- Anggaran per kategori dengan progress bar masing-masing.
+- Anggaran bulanan dengan progress bar & peringatan saat mendekati (≥80%) atau melebihi batas.
+- Anggaran per kategori dengan progress bar masing-masing & peringatan mendekati/melebihi batas.
 - Target tabungan dengan progress pencapaian.
 
 ### Rekening, transfer & transaksi berulang
 - Multi-rekening (tunai/bank/e-wallet) dengan saldo otomatis.
 - Transfer antar rekening beserta riwayatnya (edit & hapus).
-- Transaksi berulang (harian/mingguan/bulanan) dengan pengingat jatuh tempo.
+- Transaksi berulang (harian/mingguan/bulanan) dengan pengingat jatuh tempo + notifikasi browser (bila diizinkan).
+
+### Tag, lampiran, hutang-piutang & net worth
+- Tag transaksi bebas (pisahkan dengan koma) untuk pengelompokan fleksibel, ikut ter-cari & ter-ekspor.
+- Lampiran struk/foto per transaksi (gambar dikompres otomatis), tampil sebagai thumbnail & bisa diperbesar.
+- Catatan hutang-piutang: piutang (dipinjamkan) & utang, kontak, jatuh tempo, tandai lunas, total otomatis.
+- Aset & liabilitas untuk menghitung kekayaan bersih (net worth) = saldo rekening + aset − liabilitas.
 
 ### Laporan & analisis
 - Kartu ringkasan: saldo, pemasukan, dan pengeluaran (mengikuti filter).
@@ -160,7 +166,7 @@ CORS backend sudah terbuka (`cors()`), jadi panggilan dari domain Vercel ke back
 
 ### Antarmuka & panduan
 - **Navbar responsif**: di layar lebar semua aksi tampil berjajar; di layar sempit (HP/tablet) mengecil menjadi menu hamburger tanpa merusak tata letak.
-- **Menu "Data"**: ekspor CSV/PDF, import CSV, backup, dan restore dikelompokkan dalam satu dropdown agar navbar tetap ringkas.
+- **Menu "Data"**: ekspor CSV/Excel/PDF, import CSV, backup, dan restore dikelompokkan dalam satu dropdown agar navbar tetap ringkas.
 - **Avatar pengguna** dengan inisial nama di pojok kanan atas.
 - **Tutorial penggunaan**: panduan langkah demi langkah (catat transaksi, kelola rekening, transaksi berulang, anggaran, laporan, dan backup) muncul otomatis setelah masuk, dan bisa dibuka lagi kapan pun lewat tombol **Bantuan**.
 
@@ -214,6 +220,14 @@ Semua endpoint di bawah `/api` (kecuali `/api/auth/register`, `/api/auth/login`,
 | POST   | `/api/recurring` | Tambah transaksi berulang |
 | PUT    | `/api/recurring/:id` | Aktif/nonaktifkan transaksi berulang |
 | DELETE | `/api/recurring/:id` | Hapus transaksi berulang (soft delete) |
+| GET    | `/api/debts` | Daftar hutang-piutang |
+| POST   | `/api/debts` | Tambah hutang/piutang (`lend`/`borrow`) |
+| PUT    | `/api/debts/:id` | Edit / tandai lunas hutang-piutang |
+| DELETE | `/api/debts/:id` | Hapus hutang-piutang (soft delete) |
+| GET    | `/api/assets` | Daftar aset & liabilitas |
+| POST   | `/api/assets` | Tambah aset/liabilitas |
+| PUT    | `/api/assets/:id` | Edit aset/liabilitas |
+| DELETE | `/api/assets/:id` | Hapus aset/liabilitas (soft delete) |
 | GET    | `/api/trash` | Daftar item recycle bin |
 | POST   | `/api/trash/:entity/:id/restore` | Pulihkan item (`transaction\|recurring\|transfer\|account`) |
 | DELETE | `/api/trash/:entity/:id` | Hapus permanen satu item |
