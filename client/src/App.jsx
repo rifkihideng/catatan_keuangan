@@ -134,6 +134,7 @@ export default function App() {
   // Penjaga respons usang: hanya respons dari permintaan terakhir yang dipakai
   const requestIdRef = useRef(0);
   const hasLoadedRef = useRef(false);
+  const notifiedRef = useRef(new Set());
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null);
   const [restoring, setRestoring] = useState(false);
@@ -686,6 +687,37 @@ export default function App() {
     return alerts;
   }, [summary]);
 
+  // Notifikasi sistem saat ada tagihan jatuh tempo (bila izin sudah diberikan).
+  // Dedupe per kumpulan tagihan agar tidak membanjiri pengguna.
+  useEffect(() => {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    if (dueReminders.length === 0) return;
+    const key = dueReminders
+      .map((r) => r.id)
+      .sort()
+      .join(',');
+    if (notifiedRef.current.has(key)) return;
+    notifiedRef.current.add(key);
+    const body = `${dueReminders.length} tagihan jatuh tempo: ${dueReminders
+      .slice(0, 3)
+      .map(
+        (r) =>
+          `${r.category || 'Tanpa kategori'}${
+            r.days < 0
+              ? ` (terlambat ${-r.days} hari)`
+              : r.days === 0
+                ? ' (hari ini)'
+                : ` (${r.days} hari lagi)`
+          }`
+      )
+      .join(', ')}`;
+    try {
+      new Notification('Catatan Keuangan', { body, tag: 'tagihan-jatuh-tempo' });
+    } catch {
+      // Abaikan bila browser menolak menampilkan notifikasi.
+    }
+  }, [dueReminders]);
+
   // Inisial untuk avatar pengguna di navbar
   const userInitial = useMemo(() => {
     const source = (auth.user?.name || auth.user?.email || '').trim();
@@ -1123,7 +1155,7 @@ export default function App() {
         {dueReminders.length > 0 && (
           <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 print:hidden dark:border-amber-900/50 dark:bg-amber-950/50 dark:text-amber-300">
             <Clock className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
+            <span className="min-w-0 flex-1">
               {dueReminders.length} tagihan jatuh tempo:{' '}
               {dueReminders
                 .map(
@@ -1138,6 +1170,14 @@ export default function App() {
                 )
                 .join(', ')}
             </span>
+            {typeof Notification !== 'undefined' && Notification.permission === 'default' && (
+              <button
+                onClick={() => Notification.requestPermission()}
+                className="btn btn-secondary ml-auto shrink-0 px-3 py-1.5 text-xs"
+              >
+                Aktifkan notifikasi
+              </button>
+            )}
           </div>
         )}
 

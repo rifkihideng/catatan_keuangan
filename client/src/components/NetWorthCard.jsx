@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Landmark, Pencil, Plus, Trash2 } from 'lucide-react';
 import { formatRupiah } from '../format';
+import ConfirmDialog from './ConfirmDialog';
 
 export default function NetWorthCard({ assets = [], balance = 0, onAdd, onUpdate, onDelete }) {
   const [showForm, setShowForm] = useState(false);
@@ -11,6 +12,7 @@ export default function NetWorthCard({ assets = [], balance = 0, onAdd, onUpdate
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const totalAsset = assets
     .filter((a) => a.type === 'asset')
@@ -70,15 +72,15 @@ export default function NetWorthCard({ assets = [], balance = 0, onAdd, onUpdate
 
   async function confirmDelete() {
     if (!pendingDelete) return;
-    setBusy(true);
+    setDeleting(true);
     setError('');
     try {
       await onDelete(pendingDelete.id);
       setPendingDelete(null);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Gagal menghapus item');
     } finally {
-      setBusy(false);
+      setDeleting(false);
     }
   }
 
@@ -102,8 +104,17 @@ export default function NetWorthCard({ assets = [], balance = 0, onAdd, onUpdate
         </button>
       </div>
 
+      {error && (
+        <p
+          role="alert"
+          className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+        >
+          {error}
+        </p>
+      )}
+
       {showForm && (
-        <form onSubmit={submit} className="mb-4 space-y-2 rounded-lg bg-slate-100 p-3 dark:bg-slate-900">
+        <form onSubmit={submit} className="mb-4 space-y-2 rounded-xl bg-slate-100 p-3 dark:bg-slate-900">
           <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-200 p-1 dark:bg-slate-700">
             <button
               type="button"
@@ -148,7 +159,6 @@ export default function NetWorthCard({ assets = [], balance = 0, onAdd, onUpdate
               {busy ? '...' : editingId != null ? 'Perbarui' : 'Simpan'}
             </button>
           </div>
-          {error && <p className="text-xs text-rose-600">{error}</p>}
         </form>
       )}
 
@@ -170,7 +180,7 @@ export default function NetWorthCard({ assets = [], balance = 0, onAdd, onUpdate
 
       {assets.length === 0 && !showForm ? (
         <p className="py-2 text-sm text-slate-400 dark:text-slate-400">
-          Belum ada aset/liabilitas. Klik "Tambah".
+          Belum ada aset/liabilitas. Klik &quot;Tambah&quot;.
         </p>
       ) : (
         <ul className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -219,28 +229,15 @@ export default function NetWorthCard({ assets = [], balance = 0, onAdd, onUpdate
         </ul>
       )}
 
-      {pendingDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="card w-full max-w-sm p-5">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">Hapus item?</h3>
-            <p className="mt-1 text-sm text-slate-500">
-              &quot;{pendingDelete.name}&quot; akan dihapus permanen.
-            </p>
-            {error && <p className="mt-2 text-xs text-rose-600">{error}</p>}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => setPendingDelete(null)}
-                className="btn btn-secondary px-4 py-2"
-              >
-                Batal
-              </button>
-              <button onClick={confirmDelete} disabled={busy} className="btn btn-primary px-4 py-2">
-                {busy ? '...' : 'Hapus'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="Hapus item?"
+        message={`"${pendingDelete?.name || ''}" akan dihapus permanen.`}
+        error={error}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+      />
     </div>
   );
 }

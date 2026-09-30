@@ -58,6 +58,7 @@ const SCHEMA = [
     category TEXT,
     description TEXT,
     tags TEXT,
+    receipt TEXT,
     date TEXT NOT NULL,
     account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -173,10 +174,15 @@ for (const sql of SCHEMA) {
   await client.execute(sql);
 }
 
-// Migrasi ringan: tambah kolom tags untuk database yang dibuat sebelum fitur
-// tag ada. Dijalankan idempoten — galat "duplicate column" diabaikan.
+// Migrasi ringan: tambah kolom tags & receipt untuk database yang dibuat
+// sebelum fitur ini ada. Dijalankan idempoten — galat "duplicate column" diabaikan.
 try {
   await client.execute('ALTER TABLE transactions ADD COLUMN tags TEXT');
+} catch {
+  // Kolom sudah ada pada database baru.
+}
+try {
+  await client.execute('ALTER TABLE transactions ADD COLUMN receipt TEXT');
 } catch {
   // Kolom sudah ada pada database baru.
 }

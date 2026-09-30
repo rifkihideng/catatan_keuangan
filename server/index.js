@@ -695,6 +695,16 @@ function normalizeTags(value) {
   return [...new Set(parts.filter(Boolean))].join(', ');
 }
 
+// Normalisasi lampiran struk (data URL gambar). Gambar dikompresi di klien
+// jadi ukurannya kecil; batas 2,5 juta karakter base64 (~1,8 MB) sebagai
+// pengaman agar payload tidak membengkak. Nilai tidak valid → null (dibuang).
+function normalizeReceipt(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const s = String(value);
+  if (!s.startsWith('data:image/') || s.length > 2_500_000) return null;
+  return s;
+}
+
 // Normalisasi accountId: kosong → null, id valid milik pengguna → number,
 // tidak valid / milik pengguna lain → undefined
 async function normalizeAccountId(userId, accountId) {
@@ -805,7 +815,7 @@ app.post(
   '/api/transactions',
   asyncHandler(async (req, res) => {
     const userId = req.userId;
-    const { type, amount, category, description, date, accountId, tags } = req.body ?? {};
+    const { type, amount, category, description, date, accountId, tags, receipt } = req.body ?? {};
     if (!type || amount === undefined || amount === null || amount === '' || !date) {
       return res.status(400).json({ error: 'type, amount, dan date wajib diisi' });
     }
@@ -826,9 +836,9 @@ app.post(
 
     const result = await db
       .prepare(
-        'INSERT INTO transactions (type, amount, category, description, tags, date, account_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO transactions (type, amount, category, description, tags, receipt, date, account_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
-      .run(type, value, category || '', description || '', normalizeTags(tags), date, accId, userId);
+      .run(type, value, category || '', description || '', normalizeTags(tags), normalizeReceipt(receipt), date, accId, userId);
 
     res.status(201).json(await getTransaction(userId, Number(result.lastInsertRowid)));
   })
@@ -874,7 +884,7 @@ app.put(
   '/api/transactions/:id',
   asyncHandler(async (req, res) => {
     const userId = req.userId;
-    const { type, amount, category, description, date, accountId, tags } = req.body ?? {};
+    const { type, amount, category, description, date, accountId, tags, receipt } = req.body ?? {};
     if (!type || amount === undefined || amount === null || amount === '' || !date) {
       return res.status(400).json({ error: 'type, amount, dan date wajib diisi' });
     }
@@ -895,9 +905,9 @@ app.put(
 
     const result = await db
       .prepare(
-        'UPDATE transactions SET type = ?, amount = ?, category = ?, description = ?, tags = ?, date = ?, account_id = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL'
+        'UPDATE transactions SET type = ?, amount = ?, category = ?, description = ?, tags = ?, receipt = ?, date = ?, account_id = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL'
       )
-      .run(type, value, category || '', description || '', normalizeTags(tags), date, accId, req.params.id, userId);
+      .run(type, value, category || '', description || '', normalizeTags(tags), normalizeReceipt(receipt), date, accId, req.params.id, userId);
 
     if (Number(result.changes) === 0) {
       return res.status(404).json({ error: 'Transaksi tidak ditemukan' });
@@ -1811,7 +1821,7 @@ app.post(
         });
       }
       const insTx = {
-        sql: 'INSERT INTO transactions (id, type, amount, category, description, tags, date, account_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        sql: 'INSERT INTO transactions (id, type, amount, category, description, tags, receipt, date, account_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       };
       for (const t of d.transactions) {
         stmts.push({
@@ -1823,6 +1833,7 @@ app.post(
             t.category || '',
             t.description || '',
             t.tags || '',
+            t.receipt || null,
             t.date,
             t.account_id ?? null,
             userId,

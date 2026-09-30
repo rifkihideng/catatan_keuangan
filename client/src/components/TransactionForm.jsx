@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Minus, Pencil, Plus } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Minus, Paperclip, Pencil, Plus, X } from 'lucide-react';
 import { addCategory, getCategories } from '../api';
 import { todayLocal } from '../format';
 import CategoryManager from './CategoryManager';
@@ -21,6 +21,7 @@ export default function TransactionForm({
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState('');
+  const [receipt, setReceipt] = useState('');
   const [date, setDate] = useState(today);
   const [accountId, setAccountId] = useState('');
   const [error, setError] = useState('');
@@ -28,6 +29,7 @@ export default function TransactionForm({
   const [showAddCat, setShowAddCat] = useState(false);
   const [newCat, setNewCat] = useState('');
   const [showManager, setShowManager] = useState(false);
+  const receiptInputRef = useRef(null);
 
   function refreshCategories() {
     getCategories()
@@ -49,12 +51,14 @@ export default function TransactionForm({
       setCategory(editing.category || '');
       setDescription(editing.description || '');
       setTags(editing.tags || '');
+      setReceipt(editing.receipt || '');
       setDate(editing.date);
       setAccountId(editing.account_id ? String(editing.account_id) : '');
     } else {
       setAmount('');
       setDescription('');
       setTags('');
+      setReceipt('');
       setAccountId('');
     }
   }, [editing]);
@@ -87,6 +91,7 @@ export default function TransactionForm({
         category,
         description,
         tags,
+        receipt,
         date,
         accountId: accountId ? Number(accountId) : null,
       };
@@ -98,10 +103,24 @@ export default function TransactionForm({
       setAmount('');
       setDescription('');
       setTags('');
+      setReceipt('');
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleReceiptFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setError('');
+    try {
+      const dataUrl = await compressImage(file);
+      setReceipt(dataUrl);
+    } catch (err) {
+      setError(err.message || 'Gagal memuat gambar');
     }
   }
 
@@ -273,6 +292,42 @@ export default function TransactionForm({
         />
       </div>
 
+      <div>
+        <label className="label">Lampiran struk (opsional)</label>
+        {receipt ? (
+          <div className="flex items-center gap-2">
+            <img
+              src={receipt}
+              alt="Pratinjau struk"
+              className="h-16 w-16 rounded-lg border border-slate-200 object-cover"
+            />
+            <button
+              type="button"
+              onClick={() => setReceipt('')}
+              className="btn btn-secondary px-2.5 py-1.5 text-xs"
+              title="Hapus lampiran"
+            >
+              <X className="h-4 w-4" /> Hapus
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => receiptInputRef.current?.click()}
+            className="btn btn-secondary w-full px-3 py-2"
+          >
+            <Paperclip className="h-4 w-4" /> Lampirkan struk
+          </button>
+        )}
+        <input
+          ref={receiptInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleReceiptFile}
+        />
+      </div>
+
       {error && (
         <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600">
           {error}
@@ -297,4 +352,41 @@ export default function TransactionForm({
       />
     </form>
   );
+}
+
+// Kompres & ubah ukuran gambar menjadi data URL JPEG (maks. 800px) agar
+// lampiran struk tetap ringan untuk disimpan di database.
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('File harus berupa gambar'));
+      return;
+    }
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const max = 800;
+      let { width, height } = img;
+      if (width > max) {
+        height = Math.round((height * max) / width);
+        width = max;
+      }
+      if (height > max) {
+        width = Math.round((width * max) / height);
+        height = max;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.75));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Gagal membaca gambar'));
+    };
+    img.src = url;
+  });
 }

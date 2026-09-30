@@ -39,6 +39,7 @@ export default function TransactionList({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [trashOpen, setTrashOpen] = useState(false);
+  const [viewReceipt, setViewReceipt] = useState('');
 
   const allCategories = useMemo(
     () =>
@@ -134,72 +135,75 @@ export default function TransactionList({
             )
           )}
         </div>
-        <div className="flex flex-col gap-2 print:hidden lg:flex-row lg:flex-wrap lg:items-center">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari transaksi..."
-              aria-label="Cari transaksi"
-              className="input w-48 pl-8"
-            />
-          </div>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="input w-auto"
-            title="Filter kategori"
-            aria-label="Filter kategori"
-          >
-            <option value="">Semua kategori</option>
-            {allCategories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value)}
-            className="input w-auto"
-            title="Filter tipe"
-            aria-label="Filter tipe transaksi"
-          >
-            <option value="">Semua tipe</option>
-            <option value="income">Pemasukan</option>
-            <option value="expense">Pengeluaran</option>
-          </select>
-          <select
-            value={account}
-            onChange={(e) => setAccount(e.target.value)}
-            className="input w-auto"
-            title="Filter rekening"
-            aria-label="Filter rekening"
-          >
-            <option value="">Semua rekening</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={String(a.id)}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value)}
-            className="input w-auto"
-            title="Urutkan"
-            aria-label="Urutkan transaksi"
-          >
-            <option value="date-desc">Tanggal (terbaru)</option>
-            <option value="date-asc">Tanggal (terlama)</option>
-            <option value="amount-desc">Nominal (terbesar)</option>
-            <option value="amount-asc">Nominal (terkecil)</option>
-            <option value="category-asc">Kategori (A–Z)</option>
-            <option value="category-desc">Kategori (Z–A)</option>
-          </select>
+        <div className="w-full space-y-2 rounded-xl bg-slate-50 p-2.5 print:hidden dark:bg-slate-900/50 lg:w-auto">
           <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-0 flex-1 sm:flex-none">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Cari transaksi..."
+                aria-label="Cari transaksi"
+                className="input w-full pl-8 sm:w-52"
+              />
+            </div>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="input w-auto"
+              title="Filter kategori"
+              aria-label="Filter kategori"
+            >
+              <option value="">Semua kategori</option>
+              {allCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              className="input w-auto"
+              title="Filter tipe"
+              aria-label="Filter tipe transaksi"
+            >
+              <option value="">Semua tipe</option>
+              <option value="income">Pemasukan</option>
+              <option value="expense">Pengeluaran</option>
+            </select>
+            <select
+              value={account}
+              onChange={(e) => setAccount(e.target.value)}
+              className="input w-auto"
+              title="Filter rekening"
+              aria-label="Filter rekening"
+            >
+              <option value="">Semua rekening</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={String(a.id)}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value)}
+              className="input w-auto"
+              title="Urutkan"
+              aria-label="Urutkan transaksi"
+            >
+              <option value="date-desc">Tanggal (terbaru)</option>
+              <option value="date-asc">Tanggal (terlama)</option>
+              <option value="amount-desc">Nominal (terbesar)</option>
+              <option value="amount-asc">Nominal (terkecil)</option>
+              <option value="category-asc">Kategori (A–Z)</option>
+              <option value="category-desc">Kategori (Z–A)</option>
+            </select>
+            <span className="mx-0.5 hidden h-5 w-px bg-slate-200 sm:block dark:bg-slate-700" />
             <input
               type="month"
               value={month}
@@ -332,6 +336,16 @@ export default function TransactionList({
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                {t.receipt && (
+                  <button
+                    onClick={() => setViewReceipt(t.receipt)}
+                    className="shrink-0 overflow-hidden rounded-md border border-slate-200"
+                    title="Lihat struk"
+                    aria-label={`Lihat struk transaksi ${t.category || 'tanpa kategori'}`}
+                  >
+                    <img src={t.receipt} alt="Struk" className="h-9 w-9 object-cover" />
+                  </button>
+                )}
                 <span
                   className={`font-semibold ${
                     t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'
@@ -382,6 +396,30 @@ export default function TransactionList({
         onClose={() => setTrashOpen(false)}
         onChanged={onTrashChanged}
       />
+
+      {viewReceipt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Lihat struk"
+          onClick={() => setViewReceipt('')}
+        >
+          <button
+            onClick={() => setViewReceipt('')}
+            className="absolute right-4 top-4 rounded-full bg-white/20 p-2 text-white transition hover:bg-white/30"
+            aria-label="Tutup"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={viewReceipt}
+            alt="Struk"
+            className="max-h-[90vh] max-w-full rounded-xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }
