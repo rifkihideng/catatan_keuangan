@@ -99,6 +99,9 @@ const EMPTY_SUMMARY = {
   stats: { avgDailyExpense: 0, largestTransaction: null, trend: { current: 0, last: 0 } },
 };
 
+// Ukuran halaman transaksi — daftar dimuat bertahap ("Muat lebih banyak").
+const TX_PAGE_SIZE = 50;
+
 // Pesan untuk kode galat yang dikirim server lewat ?authError=...
 const AUTH_ERRORS = {
   github_tidak_aktif: 'Login GitHub belum dikonfigurasi di server ini.',
@@ -129,6 +132,15 @@ export default function App() {
   const [month, setMonth] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [txType, setTxType] = useState('');
+  const [txCategory, setTxCategory] = useState('');
+  const [txAccount, setTxAccount] = useState('');
+  const [txSort, setTxSort] = useState('');
+  const [txQuery, setTxQuery] = useState('');
+  const [totalTransactions, setTotalTransactions] = useState(0);
+  const [txIncome, setTxIncome] = useState(0);
+  const [txExpense, setTxExpense] = useState(0);
+  const [txByCategory, setTxByCategory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   // Penjaga respons usang: hanya respons dari permintaan terakhir yang dipakai
@@ -352,6 +364,15 @@ export default function App() {
     setCategories({ income: [], expense: [] });
     setCategoryReport([]);
     setSummary(EMPTY_SUMMARY);
+    setTotalTransactions(0);
+    setTxIncome(0);
+    setTxExpense(0);
+    setTxByCategory([]);
+    setTxType('');
+    setTxCategory('');
+    setTxAccount('');
+    setTxSort('');
+    setTxQuery('');
     setEditing(null);
     setError('');
     setNotice('');
@@ -367,7 +388,17 @@ export default function App() {
     if (isReload) setRefreshing(true);
     try {
       const [tx, sum, accs, trfs, recs, debts, assets, cats, report] = await Promise.all([
-        getTransactions({ month, from, to }),
+        getTransactions({
+          month,
+          from,
+          to,
+          type: txType,
+          category: txCategory,
+          account: txAccount,
+          q: txQuery,
+          sort: txSort,
+          limit: TX_PAGE_SIZE,
+        }),
         getSummary(),
         getAccounts(),
         getTransfers(),
@@ -378,7 +409,11 @@ export default function App() {
         getCategoryMonthlyReport(),
       ]);
       if (id !== requestIdRef.current) return;
-      setTransactions(tx);
+      setTransactions(tx.transactions);
+      setTotalTransactions(tx.total);
+      setTxIncome(Number(tx.income) || 0);
+      setTxExpense(Number(tx.expense) || 0);
+      setTxByCategory(tx.byCategory || []);
       setSummary(sum);
       setAccounts(accs);
       setTransfers(trfs);
@@ -403,7 +438,31 @@ export default function App() {
         }, wait);
       }
     }
-  }, [month, from, to]);
+  }, [month, from, to, txType, txCategory, txAccount, txSort, txQuery]);
+
+  // Muat halaman transaksi berikutnya dan tambahkan ke daftar yang sudah ada.
+  const loadMoreTransactions = useCallback(async () => {
+    const id = requestIdRef.current;
+    try {
+      const page = await getTransactions({
+        month,
+        from,
+        to,
+        type: txType,
+        category: txCategory,
+        account: txAccount,
+        q: txQuery,
+        sort: txSort,
+        limit: TX_PAGE_SIZE,
+        offset: transactions.length,
+      });
+      if (id !== requestIdRef.current) return;
+      setTransactions((prev) => [...prev, ...page.transactions]);
+      setTotalTransactions(page.total);
+    } catch (err) {
+      setError(err.message || 'Gagal memuat transaksi');
+    }
+  }, [month, from, to, txType, txCategory, txAccount, txSort, txQuery, transactions.length]);
 
   useEffect(() => {
     if (auth.status === 'user') loadData();
@@ -621,16 +680,12 @@ export default function App() {
     setEditing(null);
   }
 
-  // Ringkasan mengikuti filter bulan (dihitung dari transaksi yang sudah difilter)
-  const totals = useMemo(() => {
-    const income = transactions
-      .filter((t) => t.type === 'income')
-      .reduce((s, t) => s + Number(t.amount), 0);
-    const expense = transactions
-      .filter((t) => t.type === 'expense')
-      .reduce((s, t) => s + Number(t.amount), 0);
-    return { income, expense, balance: income - expense };
-  }, [transactions]);
+  // Ringkasan periode dihitung dari agregat server (bukan dari daftar yang
+  // dimuat bertahap) agar kartu pemasukan/pengeluaran tetap akurat.
+  const totals = useMemo(
+    () => ({ income: txIncome, expense: txExpense, balance: txIncome - txExpense }),
+    [txIncome, txExpense]
+  );
 
   const periodLabel =
     from || to
@@ -1283,7 +1338,7 @@ export default function App() {
                 <MonthlyChart data={summary.monthly} />
               </Suspense>
               <Suspense fallback={<ChartSkeleton />}>
-                <CategoryChart transactions={transactions} />
+                <CategoryChart byCategory={txByCategory} />
               </Suspense>
             </div>
             <div className="print:hidden">
@@ -1293,6 +1348,8 @@ export default function App() {
             </div>
             <TransactionList
               transactions={transactions}
+              total={totalTransactions}
+              onLoadMore={loadMoreTransactions}
               categories={categories}
               accounts={accounts}
               month={month}
@@ -1301,6 +1358,15 @@ export default function App() {
               setFrom={setFrom}
               to={to}
               setTo={setTo}
+              type={txType}
+              setType={setTxType}
+              category={txCategory}
+              setCategory={setTxCategory}
+              account={txAccount}
+              setAccount={setTxAccount}
+              sort={txSort}
+              setSort={setTxSort}
+              onQueryChange={setTxQuery}
               loading={loading}
               refreshing={refreshing}
               onDelete={handleDelete}

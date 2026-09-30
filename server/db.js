@@ -234,6 +234,17 @@ export const db = {
   async batch(statements) {
     return client.batch(statements, 'write');
   },
+
+  // Beberapa SELECT dijalankan dalam SATU round-trip (mode read). Mengembalikan
+  // array { rows } sesuai urutan pernyataan — dipakai endpoint yang butuh
+  // banyak agregat (mis. /api/summary) supaya latensi Turso tidak menumpuk.
+  async readBatch(statements) {
+    const results = await client.batch(
+      statements.map((s) => ({ sql: s.sql, args: s.args ?? [] })),
+      'read'
+    );
+    return results.map((r) => ({ rows: r.rows }));
+  },
 };
 
 // ---------------------------------------------------------------------------

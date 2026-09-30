@@ -9,19 +9,14 @@ const COLORS = [
   '#14b8a6', '#f97316', '#84cc16', '#ec4899', '#64748b', '#22c55e',
 ];
 
-export default function CategoryChart({ transactions }) {
+export default function CategoryChart({ byCategory = [] }) {
   const [type, setType] = useState('expense');
 
-  const grouped = transactions
-    .filter((t) => t.type === type)
-    .reduce((acc, t) => {
-      const key = t.category || 'Tanpa kategori';
-      acc[key] = acc[key] || { name: key, value: 0 };
-      acc[key].value += Number(t.amount);
-      return acc;
-    }, {});
+  const data = byCategory
+    .filter((b) => b.type === type)
+    .map((b) => ({ name: b.category || 'Tanpa kategori', value: Number(b.total) }))
+    .sort((a, b) => b.value - a.value);
 
-  const data = Object.values(grouped).sort((a, b) => b.value - a.value);
   const total = data.reduce((s, d) => s + d.value, 0);
 
   return (

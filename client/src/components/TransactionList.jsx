@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Archive,
   ArrowDown,
@@ -16,6 +16,8 @@ import TrashDialog from './TrashDialog';
 
 export default function TransactionList({
   transactions,
+  total = 0,
+  onLoadMore,
   categories = { income: [], expense: [] },
   accounts = [],
   month,
@@ -24,6 +26,15 @@ export default function TransactionList({
   setFrom,
   to,
   setTo,
+  type,
+  setType,
+  category,
+  setCategory,
+  account,
+  setAccount,
+  sort,
+  setSort,
+  onQueryChange,
   loading,
   refreshing,
   onDelete,
@@ -31,10 +42,6 @@ export default function TransactionList({
   onTrashChanged,
 }) {
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
-  const [type, setType] = useState('');
-  const [account, setAccount] = useState('');
-  const [sort, setSort] = useState('date-desc');
   const [pending, setPending] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -49,50 +56,25 @@ export default function TransactionList({
     [categories]
   );
 
-  const query = search.trim().toLowerCase();
-  const filtered = useMemo(() => {
-    let list = transactions;
-    if (query) {
-      list = list.filter(
-        (t) =>
-          (t.category || '').toLowerCase().includes(query) ||
-          (t.description || '').toLowerCase().includes(query) ||
-          (t.tags || '').toLowerCase().includes(query)
-      );
-    }
-    if (category) {
-      list = list.filter((t) => (t.category || '') === category);
-    }
-    if (type) {
-      list = list.filter((t) => t.type === type);
-    }
-    if (account) {
-      list = list.filter((t) => String(t.account_id ?? '') === account);
-    }
-    const dir = sort.endsWith('-desc') ? -1 : 1;
-    const field = sort.startsWith('date')
-      ? 'date'
-      : sort.startsWith('amount')
-        ? 'amount'
-        : 'category';
-    return [...list].sort((a, b) => {
-      let va;
-      let vb;
-      if (field === 'date') {
-        va = a.date;
-        vb = b.date;
-      } else if (field === 'amount') {
-        va = Number(a.amount);
-        vb = Number(b.amount);
-      } else {
-        va = (a.category || '').toLowerCase();
-        vb = (b.category || '').toLowerCase();
-      }
-      if (va < vb) return -dir;
-      if (va > vb) return dir;
-      return 0;
-    });
-  }, [transactions, query, category, type, account, sort]);
+  // Pencarian dikirim ke server dengan jeda singkat agar tidak membanjiri permintaan.
+  useEffect(() => {
+    const timer = setTimeout(() => onQueryChange(search.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [search, onQueryChange]);
+
+  const hasFilter = Boolean(month || from || to || category || type || account || search.trim());
+
+  function resetFilters() {
+    setMonth('');
+    setFrom('');
+    setTo('');
+    setCategory('');
+    setType('');
+    setAccount('');
+    setSort('');
+    setSearch('');
+    onQueryChange('');
+  }
 
   async function confirmDelete() {
     if (!pending) return;
@@ -130,7 +112,7 @@ export default function TransactionList({
           ) : (
             !loading && (
               <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-300">
-                {transactions.length}
+                {total}
               </span>
             )
           )}
@@ -190,7 +172,7 @@ export default function TransactionList({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select
-              value={sort}
+              value={sort || 'date-desc'}
               onChange={(e) => setSort(e.target.value)}
               className="input w-auto"
               title="Urutkan"
@@ -244,15 +226,7 @@ export default function TransactionList({
             />
             {(month || from || to || category || type || account || search) && (
               <button
-                onClick={() => {
-                  setMonth('');
-                  setFrom('');
-                  setTo('');
-                  setCategory('');
-                  setType('');
-                  setAccount('');
-                  setSearch('');
-                }}
+                onClick={resetFilters}
                 className="rounded-xl border border-slate-300 px-2 py-1.5 text-sm text-slate-500 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
                 title="Reset filter"
                 aria-label="Reset filter"
@@ -280,21 +254,20 @@ export default function TransactionList({
       ) : transactions.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-10 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
-            <Inbox className="h-6 w-6" />
+            {hasFilter ? <SearchX className="h-6 w-6" /> : <Inbox className="h-6 w-6" />}
           </span>
-          <p className="text-sm font-medium text-slate-500">Belum ada transaksi</p>
-          <p className="text-xs text-slate-400">Tambahkan transaksi pertamamu di form sebelah kiri.</p>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-10 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
-            <SearchX className="h-6 w-6" />
-          </span>
-          <p className="text-sm font-medium text-slate-500">Tidak ada hasil untuk filter ini</p>
+          <p className="text-sm font-medium text-slate-500">
+            {hasFilter ? 'Tidak ada hasil untuk filter ini' : 'Belum ada transaksi'}
+          </p>
+          {!hasFilter && (
+            <p className="text-xs text-slate-400">
+              Tambahkan transaksi pertamamu di form sebelah kiri.
+            </p>
+          )}
         </div>
       ) : (
         <ul className="divide-y divide-slate-100 dark:divide-slate-700">
-          {filtered.map((t, i) => (
+          {transactions.map((t, i) => (
             <li
               key={t.id}
               className="flex animate-list-in items-center justify-between gap-3 py-3"
@@ -377,6 +350,14 @@ export default function TransactionList({
             </li>
           ))}
         </ul>
+      )}
+
+      {transactions.length < total && (
+        <div className="mt-3 flex justify-center print:hidden">
+          <button onClick={onLoadMore} className="btn btn-secondary px-4 py-2">
+            Muat lebih banyak
+          </button>
+        </div>
       )}
 
       <ConfirmDialog

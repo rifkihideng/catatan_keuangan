@@ -727,19 +727,6 @@ async function getTransaction(userId, id) {
     .get(id, userId);
 }
 
-async function accountBalance(userId, accountId) {
-  const row = await db
-    .prepare(
-      `SELECT
-        COALESCE((SELECT SUM(amount) FROM transactions WHERE account_id = ? AND user_id = ? AND type = 'income' AND deleted_at IS NULL), 0) AS income,
-        COALESCE((SELECT SUM(amount) FROM transactions WHERE account_id = ? AND user_id = ? AND type = 'expense' AND deleted_at IS NULL), 0) AS expense,
-        COALESCE((SELECT SUM(amount) FROM transfers WHERE from_account_id = ? AND user_id = ? AND deleted_at IS NULL), 0) AS out_amt,
-        COALESCE((SELECT SUM(amount) FROM transfers WHERE to_account_id = ? AND user_id = ? AND deleted_at IS NULL), 0) AS in_amt`
-    )
-    .get(accountId, userId, accountId, userId, accountId, userId, accountId, userId);
-  return row.income - row.expense + row.in_amt - row.out_amt;
-}
-
 // Buat transaksi dari transaksi berulang yang sudah jatuh tempo (semua pengguna)
 async function processRecurring() {
   const advance = { daily: '+1 day', weekly: '+7 days', monthly: '+1 month' };
@@ -775,23 +762,24 @@ async function processRecurring() {
   }
 }
 
-// Ambil semua transaksi (bisa filter per bulan: ?month=YYYY-MM, atau rentang tanggal: ?from=&to=)
+// Ambil transaksi dengan filter, pengurutan, dan pagination.
+// Query: month|from|to, type, category, account, q (cari), sort, limit, offset.
+// Respons: { transactions, total, income, expense, byCategory } — agregat periode
+// (income/expense/byCategory) selalu utuh agar kartu ringkasan & grafik benar
+// walau daftar transaksi dimuat bertahap.
 app.get(
   '/api/transactions',
   asyncHandler(async (req, res) => {
     const userId = req.userId;
-    const { month, from, to } = req.query;
-    const base =
-      'SELECT t.*, a.name AS account_name FROM transactions t LEFT JOIN accounts a ON a.id = t.account_id WHERE t.deleted_at IS NULL AND t.user_id = ?';
+    const { month, from, to, type, category, account, q, sort, limit, offset } = req.query;
+
+    const clauses = ['t.deleted_at IS NULL', 't.user_id = ?'];
+    const params = [userId];
+
     if (month) {
-      const rows = await db
-        .prepare(`${base} AND strftime('%Y-%m', t.date) = ? ORDER BY t.date DESC, t.id DESC`)
-        .all(userId, month);
-      return res.json(rows);
-    }
-    if (from || to) {
-      const clauses = [];
-      const params = [];
+      clauses.push("strftime('%Y-%m', t.date) = ?");
+      params.push(String(month));
+    } else if (from || to) {
       if (from) {
         clauses.push('t.date >= ?');
         params.push(String(from));
@@ -800,13 +788,78 @@ app.get(
         clauses.push('t.date <= ?');
         params.push(String(to));
       }
-      const rows = await db
-        .prepare(`${base} AND ${clauses.join(' AND ')} ORDER BY t.date DESC, t.id DESC`)
-        .all(userId, ...params);
-      return res.json(rows);
     }
-    const rows = await db.prepare(`${base} ORDER BY t.date DESC, t.id DESC`).all(userId);
-    res.json(rows);
+    if (type === 'income' || type === 'expense') {
+      clauses.push('t.type = ?');
+      params.push(type);
+    }
+    if (category) {
+      clauses.push('t.category = ?');
+      params.push(String(category));
+    }
+    if (account) {
+      clauses.push('t.account_id = ?');
+      params.push(Number(account));
+    }
+    if (q) {
+      const like = `%${String(q)}%`;
+      clauses.push('(t.category LIKE ? OR t.description LIKE ? OR t.tags LIKE ?)');
+      params.push(like, like, like);
+    }
+
+    const where = clauses.join(' AND ');
+
+    const orderMap = {
+      'date-asc': 't.date ASC, t.id ASC',
+      'amount-desc': 't.amount DESC, t.id DESC',
+      'amount-asc': 't.amount ASC, t.id ASC',
+      'category-asc': 't.category ASC, t.id ASC',
+      'category-desc': 't.category DESC, t.id DESC',
+    };
+    const orderBy = orderMap[sort] || 't.date DESC, t.id DESC';
+
+    // Pagination: 50 baris per halaman secara bawaan, dibatasi maksimal 500.
+    const pageSize = Math.min(Number(limit) > 0 ? Number(limit) : 50, 500);
+    const pageOffset = Math.max(Number(offset) || 0, 0);
+
+    const [rowsRes, countRes, sumRes, catRes] = await db.readBatch([
+      {
+        sql: `SELECT t.*, a.name AS account_name
+              FROM transactions t
+              LEFT JOIN accounts a ON a.id = t.account_id
+              WHERE ${where}
+              ORDER BY ${orderBy}
+              LIMIT ? OFFSET ?`,
+        args: [...params, pageSize, pageOffset],
+      },
+      {
+        sql: `SELECT COUNT(*) AS total FROM transactions t WHERE ${where}`,
+        args: params,
+      },
+      {
+        sql: `SELECT
+                COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) AS income,
+                COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) AS expense
+              FROM transactions t
+              WHERE ${where}`,
+        args: params,
+      },
+      {
+        sql: `SELECT type, COALESCE(NULLIF(category, ''), 'Tanpa kategori') AS category, SUM(amount) AS total
+              FROM transactions t
+              WHERE ${where}
+              GROUP BY type, category`,
+        args: params,
+      },
+    ]);
+
+    res.json({
+      transactions: rowsRes.rows,
+      total: Number(countRes.rows[0]?.total) || 0,
+      income: Number(sumRes.rows[0]?.income) || 0,
+      expense: Number(sumRes.rows[0]?.expense) || 0,
+      byCategory: catRes.rows,
+    });
   })
 );
 
@@ -1116,16 +1169,33 @@ app.put(
 app.get(
   '/api/accounts',
   asyncHandler(async (req, res) => {
+    const userId = req.userId;
     const accounts = await db
       .prepare('SELECT * FROM accounts WHERE deleted_at IS NULL AND user_id = ? ORDER BY id')
-      .all(req.userId);
-    const withBalance = [];
-    for (const a of accounts) {
-      withBalance.push({
-        ...a,
-        balance: Number(a.initial_balance) + (await accountBalance(req.userId, a.id)),
-      });
-    }
+      .all(userId);
+
+    // Saldo semua rekening dihitung dalam SATU round-trip (bukan 1 query per
+    // rekening) supaya muat cepat saat rekening bertambah.
+    const balances = await db.readBatch(
+      accounts.map((a) => ({
+        sql: `SELECT
+          COALESCE((SELECT SUM(amount) FROM transactions WHERE account_id = ? AND user_id = ? AND type = 'income' AND deleted_at IS NULL), 0) AS income,
+          COALESCE((SELECT SUM(amount) FROM transactions WHERE account_id = ? AND user_id = ? AND type = 'expense' AND deleted_at IS NULL), 0) AS expense,
+          COALESCE((SELECT SUM(amount) FROM transfers WHERE from_account_id = ? AND user_id = ? AND deleted_at IS NULL), 0) AS out_amt,
+          COALESCE((SELECT SUM(amount) FROM transfers WHERE to_account_id = ? AND user_id = ? AND deleted_at IS NULL), 0) AS in_amt`,
+        args: [a.id, userId, a.id, userId, a.id, userId, a.id, userId],
+      }))
+    );
+
+    const withBalance = accounts.map((a, i) => {
+      const row = balances[i].rows[0] || {};
+      const delta =
+        (Number(row.income) || 0) -
+        (Number(row.expense) || 0) +
+        (Number(row.in_amt) || 0) -
+        (Number(row.out_amt) || 0);
+      return { ...a, balance: Number(a.initial_balance) + delta };
+    });
     res.json(withBalance);
   })
 );
@@ -1939,133 +2009,130 @@ app.get(
   })
 );
 
-// Ringkasan: total pemasukan, pengeluaran, saldo, dan rincian per bulan
+// Ringkasan: total pemasukan, pengeluaran, saldo, dan rincian per bulan.
+// Semua agregat digabung menjadi SATU round-trip ke database (db.readBatch)
+// agar ringkas cepat meski latensi Turso cukup besar.
 app.get(
   '/api/summary',
   asyncHandler(async (req, res) => {
     const userId = req.userId;
-    const totals = await db
-      .prepare(
-        `SELECT
-          COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) AS income,
-          COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) AS expense
-        FROM transactions
-        WHERE deleted_at IS NULL AND user_id = ?`
-      )
-      .get(userId);
-
-    const monthly = await db
-      .prepare(
-        `SELECT
-          strftime('%Y-%m', date) AS month,
-          SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) AS income,
-          SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS expense
-        FROM transactions
-        WHERE deleted_at IS NULL AND user_id = ?
-        GROUP BY month
-        ORDER BY month`
-      )
-      .all(userId);
-
-    const monthExpense = (
-      await db
-        .prepare(
-          `SELECT COALESCE(SUM(amount), 0) AS total
+    const [totals, monthly, monthExpenseRow, budgetRow, savingsGoalRow, categoryBudgets, categoryExpenses, daysRow, largestRow, trendRow, initialRow, dailyDelta] =
+      await db.readBatch([
+        {
+          sql: `SELECT
+            COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) AS income,
+            COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) AS expense
+          FROM transactions
+          WHERE deleted_at IS NULL AND user_id = ?`,
+          args: [userId],
+        },
+        {
+          sql: `SELECT
+            strftime('%Y-%m', date) AS month,
+            SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) AS income,
+            SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS expense
+          FROM transactions
+          WHERE deleted_at IS NULL AND user_id = ?
+          GROUP BY month
+          ORDER BY month`,
+          args: [userId],
+        },
+        {
+          sql: `SELECT COALESCE(SUM(amount), 0) AS total
            FROM transactions
-           WHERE type = 'expense' AND deleted_at IS NULL AND user_id = ? AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime')`
-        )
-        .get(userId)
-    ).total;
-
-    const budget = Number(await getSetting(userId, 'monthly_budget', '0')) || 0;
-
-    const categoryBudgets = await db
-      .prepare('SELECT category, amount FROM category_budgets WHERE user_id = ? ORDER BY category')
-      .all(userId);
-
-    const categoryExpenses = await db
-      .prepare(
-        `SELECT COALESCE(NULLIF(category, ''), 'Tanpa kategori') AS category, SUM(amount) AS total
-         FROM transactions
-         WHERE type = 'expense' AND deleted_at IS NULL AND user_id = ? AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime')
-         GROUP BY category`
-      )
-      .all(userId);
-
-    // Statistik tambahan
-    const daysElapsed =
-      Number(
-        (await db.prepare("SELECT CAST(strftime('%d', 'now', 'localtime') AS INTEGER) AS d").get()).d
-      ) || 1;
-    const avgDailyExpense = monthExpense / daysElapsed;
-
-    const largestTransaction =
-      (await db
-        .prepare(
-          `SELECT amount, category, description, date, type
+           WHERE type = 'expense' AND deleted_at IS NULL AND user_id = ? AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime')`,
+          args: [userId],
+        },
+        {
+          sql: `SELECT value FROM settings WHERE user_id = ? AND key = 'monthly_budget'`,
+          args: [userId],
+        },
+        {
+          sql: `SELECT value FROM settings WHERE user_id = ? AND key = 'savings_goal'`,
+          args: [userId],
+        },
+        {
+          sql: `SELECT category, amount FROM category_budgets WHERE user_id = ? ORDER BY category`,
+          args: [userId],
+        },
+        {
+          sql: `SELECT COALESCE(NULLIF(category, ''), 'Tanpa kategori') AS category, SUM(amount) AS total
+           FROM transactions
+           WHERE type = 'expense' AND deleted_at IS NULL AND user_id = ? AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime')
+           GROUP BY category`,
+          args: [userId],
+        },
+        {
+          sql: `SELECT CAST(strftime('%d', 'now', 'localtime') AS INTEGER) AS d`,
+          args: [],
+        },
+        {
+          sql: `SELECT amount, category, description, date, type
            FROM transactions
            WHERE deleted_at IS NULL AND user_id = ? AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime')
            ORDER BY amount DESC
-           LIMIT 1`
-        )
-        .get(userId)) || null;
+           LIMIT 1`,
+          args: [userId],
+        },
+        {
+          sql: `SELECT
+            COALESCE(SUM(CASE WHEN strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime') AND type = 'expense' THEN amount ELSE 0 END), 0) AS current,
+            COALESCE(SUM(CASE WHEN strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime', '-1 month') AND type = 'expense' THEN amount ELSE 0 END), 0) AS last
+          FROM transactions
+          WHERE deleted_at IS NULL AND user_id = ?`,
+          args: [userId],
+        },
+        {
+          sql: `SELECT COALESCE(SUM(initial_balance), 0) AS total FROM accounts WHERE deleted_at IS NULL AND user_id = ?`,
+          args: [userId],
+        },
+        {
+          sql: `SELECT date, SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END) AS delta
+           FROM transactions
+           WHERE deleted_at IS NULL AND user_id = ?
+           GROUP BY date
+           ORDER BY date`,
+          args: [userId],
+        },
+      ]);
 
-    const trend = await db
-      .prepare(
-        `SELECT
-          COALESCE(SUM(CASE WHEN strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime') AND type = 'expense' THEN amount ELSE 0 END), 0) AS current,
-          COALESCE(SUM(CASE WHEN strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime', '-1 month') AND type = 'expense' THEN amount ELSE 0 END), 0) AS last
-        FROM transactions
-        WHERE deleted_at IS NULL AND user_id = ?`
-      )
-      .get(userId);
-
-    // Saldo awal seluruh rekening aktif — disamakan dengan GET /api/accounts
-    // agar "Saldo" di ringkasan tidak berbeda dengan "Total" di kartu Rekening.
-    const initialBalances =
-      (
-        await db
-          .prepare(
-            'SELECT COALESCE(SUM(initial_balance), 0) AS total FROM accounts WHERE deleted_at IS NULL AND user_id = ?'
-          )
-          .get(userId)
-      ).total || 0;
+    const income = Number(totals.rows[0]?.income) || 0;
+    const expense = Number(totals.rows[0]?.expense) || 0;
+    const monthExpense = Number(monthExpenseRow.rows[0]?.total) || 0;
+    const budget = Number(budgetRow.rows[0]?.value) || 0;
+    const savingsGoal = Number(savingsGoalRow.rows[0]?.value) || 0;
+    const daysElapsed = Number(daysRow.rows[0]?.d) || 1;
+    const initialBalances = Number(initialRow.rows[0]?.total) || 0;
+    const largestTransaction = largestRow.rows[0] || null;
+    const trend = {
+      current: Number(trendRow.rows[0]?.current) || 0,
+      last: Number(trendRow.rows[0]?.last) || 0,
+    };
 
     // Tren saldo kumulatif dari waktu ke waktu (harian), dimulai dari saldo awal
-    const dailyDelta = await db
-      .prepare(
-        `SELECT date, SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END) AS delta
-         FROM transactions
-         WHERE deleted_at IS NULL AND user_id = ?
-         GROUP BY date
-         ORDER BY date`
-      )
-      .all(userId);
     let runningBalance = initialBalances;
-    const balanceTrend = dailyDelta.map((r) => {
+    const balanceTrend = dailyDelta.rows.map((r) => {
       runningBalance += Number(r.delta);
       return { date: r.date, balance: runningBalance };
     });
 
-    const savingsGoal = Number(await getSetting(userId, 'savings_goal', '0')) || 0;
-
     res.json({
-      income: totals.income,
-      expense: totals.expense,
+      income,
+      expense,
       initialBalances,
-      balance: initialBalances + totals.income - totals.expense,
+      balance: initialBalances + income - expense,
       monthExpense,
       budget,
       savingsGoal,
-      categoryBudgets,
-      categoryExpenses,
-      monthly,
+      categoryBudgets: categoryBudgets.rows,
+      categoryExpenses: categoryExpenses.rows,
+      monthly: monthly.rows,
       balanceTrend,
       stats: {
-        avgDailyExpense,
+        avgDailyExpense: monthExpense / daysElapsed,
         daysElapsed,
         largestTransaction,
-        trend: { current: trend.current, last: trend.last },
+        trend,
       },
     });
   })

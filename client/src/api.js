@@ -84,11 +84,18 @@ export const resendVerification = () => request('/auth/resend-verification', { m
 export const exchangeGithubCode = (code) =>
   request('/auth/github/exchange', { method: 'POST', body: JSON.stringify({ code }) }, false);
 
-export const getTransactions = ({ month, from, to } = {}) => {
+export const getTransactions = ({ month, from, to, type, category, account, q, sort, limit, offset } = {}) => {
   const params = new URLSearchParams();
   if (month) params.set('month', month);
   if (from) params.set('from', from);
   if (to) params.set('to', to);
+  if (type) params.set('type', type);
+  if (category) params.set('category', category);
+  if (account) params.set('account', account);
+  if (q) params.set('q', q);
+  if (sort) params.set('sort', sort);
+  if (limit) params.set('limit', limit);
+  if (offset) params.set('offset', offset);
   const qs = params.toString();
   return request(qs ? `/transactions?${qs}` : '/transactions');
 };

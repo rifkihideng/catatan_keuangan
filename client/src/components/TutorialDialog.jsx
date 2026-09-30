@@ -6,9 +6,12 @@ import {
   BarChart3,
   Check,
   DatabaseBackup,
+  HandCoins,
+  Landmark,
   PiggyBank,
   PlusCircle,
   Repeat,
+  Search,
   Wallet,
   X,
 } from 'lucide-react';
@@ -17,7 +20,12 @@ const STEPS = [
   {
     icon: PlusCircle,
     title: 'Catat Transaksi',
-    desc: 'Gunakan form "Tambah Transaksi" di sebelah kiri untuk mencatat pemasukan & pengeluaran. Pilih tipe, isi nominal, kategori, tanggal, dan rekening, lalu tekan Simpan.',
+    desc: 'Gunakan form "Tambah Transaksi" di sebelah kiri untuk mencatat pemasukan & pengeluaran. Isi tipe, nominal, kategori, tanggal, dan rekening. Tambahkan tag (pisahkan dengan koma) dan lampirkan foto struk bila perlu, lalu tekan Simpan.',
+  },
+  {
+    icon: Search,
+    title: 'Cari & Filter Transaksi',
+    desc: 'Gunakan kolom pencarian dan filter (kategori, tipe, rekening, bulan/rentang tanggal) di kartu "Riwayat Transaksi". Hasilnya ikut tampil di ringkasan & grafik, dan daftar dimuat bertahap — klik "Muat lebih banyak" untuk transaksi berikutnya.',
   },
   {
     icon: Wallet,
@@ -27,12 +35,22 @@ const STEPS = [
   {
     icon: Repeat,
     title: 'Transaksi Berulang',
-    desc: 'Buat tagihan otomatis harian, mingguan, atau bulanan. Pengeluaran rutin tercatat sendiri dan muncul pengingat saat mendekati jatuh tempo.',
+    desc: 'Buat tagihan otomatis harian, mingguan, atau bulanan. Pengeluaran rutin tercatat sendiri dan muncul pengingat saat mendekati jatuh tempo — izinkan notifikasi browser agar diingatkan lewat sistem.',
   },
   {
     icon: PiggyBank,
     title: 'Anggaran & Target',
-    desc: 'Atur anggaran bulanan, anggaran per kategori, dan target tabungan untuk memantau progres serta mencegah pengeluaran berlebih.',
+    desc: 'Atur anggaran bulanan, anggaran per kategori, dan target tabungan. Peringatan muncul otomatis saat pemakaian mendekati (≥80%) atau sudah melebihi batas.',
+  },
+  {
+    icon: HandCoins,
+    title: 'Hutang & Piutang',
+    desc: 'Catat utang dan piutang: siapa pihaknya, nominal, kontak, dan jatuh tempo. Tandai lunas saat selesai — total piutang & utang dihitung otomatis.',
+  },
+  {
+    icon: Landmark,
+    title: 'Aset & Liabilitas (Net Worth)',
+    desc: 'Tambahkan aset (mis. emas, kendaraan) dan liabilitas (mis. KPR, pinjaman) untuk memantau kekayaan bersihmu dari waktu ke waktu.',
   },
   {
     icon: BarChart3,
@@ -42,7 +60,7 @@ const STEPS = [
   {
     icon: DatabaseBackup,
     title: 'Simpan & Amankan Data',
-    desc: 'Ekspor ke CSV/PDF, import CSV, serta lakukan Backup & Restore dari tombol di pojok kanan atas. Data kamu tersimpan aman.',
+    desc: 'Ekspor ke CSV/Excel/PDF, import CSV, serta lakukan Backup & Restore dari tombol di pojok kanan atas. Data kamu tersimpan aman.',
   },
 ];
 
