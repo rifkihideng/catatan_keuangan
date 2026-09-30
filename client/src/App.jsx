@@ -7,6 +7,7 @@ import {
   Clock,
   DatabaseBackup,
   Download,
+  FileSpreadsheet,
   LogOut,
   MailWarning,
   Menu,
@@ -15,6 +16,7 @@ import {
   Printer,
   RotateCcw,
   Sun,
+  TriangleAlert,
   Upload,
   Wallet,
   X,
@@ -22,20 +24,26 @@ import {
 import {
   AUTH_UNAUTHORIZED_EVENT,
   addAccount,
+  addAsset,
+  addDebt,
   addRecurring,
   addTransaction,
   addTransfer,
   deleteAccount,
+  deleteAsset,
   deleteCategoryBudget,
+  deleteDebt,
   deleteRecurring,
   deleteTransaction,
   deleteTransfer,
   exchangeGithubCode,
   getAccounts,
+  getAssets,
   getAuthConfig,
   getBackup,
   getCategories,
   getCategoryMonthlyReport,
+  getDebts,
   getMe,
   getMeSilent,
   getRecurring,
@@ -50,11 +58,13 @@ import {
   setCategoryBudget,
   setSavingsGoal,
   toggleRecurring,
+  updateAsset,
+  updateDebt,
   updateTransaction,
   updateTransfer,
   verifyEmail,
 } from './api';
-import { todayLocal } from './format';
+import { formatRupiahCompact, todayLocal } from './format';
 import AuthScreen from './AuthScreen';
 import SummaryCards from './components/SummaryCards';
 import LoadingScreen from './components/LoadingScreen';
@@ -72,6 +82,8 @@ import SavingsRateCard from './components/SavingsRateCard';
 import StatsCard from './components/StatsCard';
 import AccountsCard from './components/AccountsCard';
 import RecurringCard from './components/RecurringCard';
+import DebtsCard from './components/DebtsCard';
+import NetWorthCard from './components/NetWorthCard';
 import TutorialDialog from './components/TutorialDialog';
 
 // Ringkasan kosong — dipakai saat pertama kali memuat dan sesudah keluar akun.
@@ -109,6 +121,8 @@ export default function App() {
   const [accounts, setAccounts] = useState([]);
   const [transfers, setTransfers] = useState([]);
   const [recurring, setRecurring] = useState([]);
+  const [debts, setDebts] = useState([]);
+  const [assets, setAssets] = useState([]);
   const [categories, setCategories] = useState({ income: [], expense: [] });
   const [categoryReport, setCategoryReport] = useState([]);
   const [summary, setSummary] = useState(EMPTY_SUMMARY);
@@ -332,6 +346,8 @@ export default function App() {
     setAccounts([]);
     setTransfers([]);
     setRecurring([]);
+    setDebts([]);
+    setAssets([]);
     setCategories({ income: [], expense: [] });
     setCategoryReport([]);
     setSummary(EMPTY_SUMMARY);
@@ -349,12 +365,14 @@ export default function App() {
     const startedAt = Date.now();
     if (isReload) setRefreshing(true);
     try {
-      const [tx, sum, accs, trfs, recs, cats, report] = await Promise.all([
+      const [tx, sum, accs, trfs, recs, debts, assets, cats, report] = await Promise.all([
         getTransactions({ month, from, to }),
         getSummary(),
         getAccounts(),
         getTransfers(),
         getRecurring(),
+        getDebts(),
+        getAssets(),
         getCategories(),
         getCategoryMonthlyReport(),
       ]);
@@ -364,6 +382,8 @@ export default function App() {
       setAccounts(accs);
       setTransfers(trfs);
       setRecurring(recs);
+      setDebts(debts);
+      setAssets(assets);
       setCategories(cats);
       setCategoryReport(report);
       setError('');
@@ -437,6 +457,18 @@ export default function App() {
   const handleToggleRecurring = (id, active) => runAction(() => toggleRecurring(id, active));
 
   const handleDeleteRecurring = (id) => runAction(() => deleteRecurring(id));
+
+  const handleAddDebt = (data) => runAction(() => addDebt(data));
+
+  const handleUpdateDebt = (id, data) => runAction(() => updateDebt(id, data));
+
+  const handleDeleteDebt = (id) => runAction(() => deleteDebt(id));
+
+  const handleAddAsset = (data) => runAction(() => addAsset(data));
+
+  const handleUpdateAsset = (id, data) => runAction(() => updateAsset(id, data));
+
+  const handleDeleteAsset = (id) => runAction(() => deleteAsset(id));
 
   const handleSaveSavingsGoal = (amount) => runAction(() => setSavingsGoal(amount));
 
@@ -520,12 +552,14 @@ export default function App() {
   }
 
   function handleExportCSV() {
-    const header = ['Tanggal', 'Tipe', 'Kategori', 'Keterangan', 'Nominal'];
+    const header = ['Tanggal', 'Tipe', 'Kategori', 'Keterangan', 'Tag', 'Rekening', 'Nominal'];
     const rows = transactions.map((t) => [
       t.date,
       t.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
       t.category || '',
       t.description || '',
+      t.tags || '',
+      t.account_name || '',
       t.amount,
     ]);
     const csv = [header, ...rows]
@@ -536,6 +570,41 @@ export default function App() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `transaksi-${month || 'semua'}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExportExcel() {
+    const header = ['Tanggal', 'Tipe', 'Kategori', 'Keterangan', 'Tag', 'Rekening', 'Nominal'];
+    const rows = transactions.map((t) => [
+      t.date,
+      t.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
+      t.category || '',
+      t.description || '',
+      t.tags || '',
+      t.account_name || '',
+      Number(t.amount),
+    ]);
+    const esc = (v) =>
+      String(v ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    const html =
+      '<table><thead><tr>' +
+      header.map((h) => `<th>${esc(h)}</th>`).join('') +
+      '</tr></thead><tbody>' +
+      rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('') +
+      '</tbody></table>';
+    const blob = new Blob(['\uFEFF<html><head><meta charset="utf-8"></head><body>' + html + '</body></html>'], {
+      type: 'application/vnd.ms-excel;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `transaksi-${month || 'semua'}.xls`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -578,6 +647,44 @@ export default function App() {
       .filter((r) => r.days <= 3)
       .sort((a, b) => a.days - b.days);
   }, [recurring]);
+
+  // Peringatan anggaran: anggaran bulanan & anggaran per kategori yang
+  // mendekati (>= 80%) atau sudah terlampaui.
+  const budgetAlerts = useMemo(() => {
+    const alerts = [];
+    const budget = Number(summary.budget) || 0;
+    const monthExpense = Number(summary.monthExpense) || 0;
+    if (budget > 0 && monthExpense > 0) {
+      if (monthExpense >= budget) {
+        alerts.push({
+          level: 'over',
+          text: `Anggaran bulanan terlampaui: ${formatRupiahCompact(monthExpense)} dari ${formatRupiahCompact(budget)}`,
+        });
+      } else if (monthExpense / budget >= 0.8) {
+        alerts.push({
+          level: 'near',
+          text: `Anggaran bulanan hampir habis: ${Math.round((monthExpense / budget) * 100)}% terpakai`,
+        });
+      }
+    }
+    const expenseMap = Object.fromEntries(
+      (summary.categoryExpenses || []).map((e) => [e.category, Number(e.total)])
+    );
+    for (const b of summary.categoryBudgets || []) {
+      const spent = expenseMap[b.category] || 0;
+      const limit = Number(b.amount) || 0;
+      if (limit <= 0 || spent <= 0) continue;
+      if (spent >= limit) {
+        alerts.push({ level: 'over', text: `Kategori "${b.category}" melebihi anggarannya` });
+      } else if (spent / limit >= 0.8) {
+        alerts.push({
+          level: 'near',
+          text: `Kategori "${b.category}" sudah ${Math.round((spent / limit) * 100)}% dari anggaran`,
+        });
+      }
+    }
+    return alerts;
+  }, [summary]);
 
   // Inisial untuk avatar pengguna di navbar
   const userInitial = useMemo(() => {
@@ -717,6 +824,16 @@ export default function App() {
                       className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
                     >
                       <Download className="h-4 w-4 text-slate-400" /> Ekspor CSV
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setDataMenuOpen(false);
+                        handleExportExcel();
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-slate-400" /> Ekspor Excel
                     </button>
                     <button
                       role="menuitem"
@@ -879,6 +996,16 @@ export default function App() {
                     onClick={() => {
                       setMenuOpen(false);
                       setMobileDataOpen(false);
+                      handleExportExcel();
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 text-slate-400" /> Ekspor Excel
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setMobileDataOpen(false);
                       window.print();
                     }}
                     className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
@@ -1014,6 +1141,25 @@ export default function App() {
           </div>
         )}
 
+        {budgetAlerts.length > 0 && (
+          <div
+            className={`rounded-xl border px-4 py-3 text-sm print:hidden ${
+              budgetAlerts.some((a) => a.level === 'over')
+                ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/60 dark:text-rose-300'
+                : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/50 dark:text-amber-300'
+            }`}
+          >
+            <ul className="space-y-1">
+              {budgetAlerts.map((a, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{a.text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <SummaryCards summary={totals} periodLabel={periodLabel} balance={summary.balance} />
 
         <div className="print:hidden">
@@ -1077,6 +1223,19 @@ export default function App() {
               onToggle={handleToggleRecurring}
               onDelete={handleDeleteRecurring}
             />
+            <NetWorthCard
+              assets={assets}
+              balance={summary.balance}
+              onAdd={handleAddAsset}
+              onUpdate={handleUpdateAsset}
+              onDelete={handleDeleteAsset}
+            />
+            <DebtsCard
+              debts={debts}
+              onAdd={handleAddDebt}
+              onUpdate={handleUpdateDebt}
+              onDelete={handleDeleteDebt}
+            />
           </div>
           <div className="space-y-6 lg:col-span-2 print:space-y-0">
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 print:hidden">
@@ -1095,6 +1254,7 @@ export default function App() {
             <TransactionList
               transactions={transactions}
               categories={categories}
+              accounts={accounts}
               month={month}
               setMonth={setMonth}
               from={from}

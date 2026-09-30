@@ -684,6 +684,17 @@ function parseAmount(value) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+// Normalisasi tag: menerima array atau teks terpisah koma, hasilkan string
+// "tag1, tag2" tanpa duplikat/elemen kosong.
+function normalizeTags(value) {
+  const parts = Array.isArray(value)
+    ? value.map((s) => String(s ?? '').trim())
+    : String(value ?? '')
+        .split(',')
+        .map((s) => s.trim());
+  return [...new Set(parts.filter(Boolean))].join(', ');
+}
+
 // Normalisasi accountId: kosong → null, id valid milik pengguna → number,
 // tidak valid / milik pengguna lain → undefined
 async function normalizeAccountId(userId, accountId) {
@@ -794,7 +805,7 @@ app.post(
   '/api/transactions',
   asyncHandler(async (req, res) => {
     const userId = req.userId;
-    const { type, amount, category, description, date, accountId } = req.body ?? {};
+    const { type, amount, category, description, date, accountId, tags } = req.body ?? {};
     if (!type || amount === undefined || amount === null || amount === '' || !date) {
       return res.status(400).json({ error: 'type, amount, dan date wajib diisi' });
     }
@@ -815,9 +826,9 @@ app.post(
 
     const result = await db
       .prepare(
-        'INSERT INTO transactions (type, amount, category, description, date, account_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO transactions (type, amount, category, description, tags, date, account_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       )
-      .run(type, value, category || '', description || '', date, accId, userId);
+      .run(type, value, category || '', description || '', normalizeTags(tags), date, accId, userId);
 
     res.status(201).json(await getTransaction(userId, Number(result.lastInsertRowid)));
   })
@@ -863,7 +874,7 @@ app.put(
   '/api/transactions/:id',
   asyncHandler(async (req, res) => {
     const userId = req.userId;
-    const { type, amount, category, description, date, accountId } = req.body ?? {};
+    const { type, amount, category, description, date, accountId, tags } = req.body ?? {};
     if (!type || amount === undefined || amount === null || amount === '' || !date) {
       return res.status(400).json({ error: 'type, amount, dan date wajib diisi' });
     }
@@ -884,9 +895,9 @@ app.put(
 
     const result = await db
       .prepare(
-        'UPDATE transactions SET type = ?, amount = ?, category = ?, description = ?, date = ?, account_id = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL'
+        'UPDATE transactions SET type = ?, amount = ?, category = ?, description = ?, tags = ?, date = ?, account_id = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL'
       )
-      .run(type, value, category || '', description || '', date, accId, req.params.id, userId);
+      .run(type, value, category || '', description || '', normalizeTags(tags), date, accId, req.params.id, userId);
 
     if (Number(result.changes) === 0) {
       return res.status(404).json({ error: 'Transaksi tidak ditemukan' });
@@ -1336,6 +1347,197 @@ app.delete(
   })
 );
 
+// Daftar hutang-piutang (lend = piutang, borrow = utang)
+app.get(
+  '/api/debts',
+  asyncHandler(async (req, res) => {
+    const rows = await db
+      .prepare(
+        `SELECT * FROM debts WHERE deleted_at IS NULL AND user_id = ?
+         ORDER BY settled ASC, due_date IS NULL, due_date ASC, id DESC`
+      )
+      .all(req.userId);
+    res.json(rows);
+  })
+);
+
+// Tambah hutang/piutang
+app.post(
+  '/api/debts',
+  asyncHandler(async (req, res) => {
+    const userId = req.userId;
+    const { name, amount, type, contact, dueDate, note } = req.body ?? {};
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: 'Nama/pihak wajib diisi' });
+    }
+    if (!['lend', 'borrow'].includes(type)) {
+      return res.status(400).json({ error: 'type harus lend (piutang) atau borrow (utang)' });
+    }
+    const value = parseAmount(amount);
+    if (value === null) {
+      return res.status(400).json({ error: 'Nominal harus angka lebih dari 0' });
+    }
+    if (dueDate && !isValidDate(dueDate)) {
+      return res.status(400).json({ error: 'Tanggal jatuh tempo harus format YYYY-MM-DD' });
+    }
+    const result = await db
+      .prepare(
+        'INSERT INTO debts (name, amount, type, contact, due_date, note, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
+      .run(String(name).trim(), value, type, contact || '', dueDate || null, note || '', userId);
+    const row = await db
+      .prepare('SELECT * FROM debts WHERE id = ?')
+      .get(Number(result.lastInsertRowid));
+    res.status(201).json(row);
+  })
+);
+
+// Perbarui hutang/piutang (termasuk tandai lunas)
+app.put(
+  '/api/debts/:id',
+  asyncHandler(async (req, res) => {
+    const userId = req.userId;
+    const existing = await db
+      .prepare('SELECT * FROM debts WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
+      .get(req.params.id, userId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Hutang/piutang tidak ditemukan' });
+    }
+    const { name, amount, type, contact, dueDate, note, settled } = req.body ?? {};
+    const value = amount === undefined ? existing.amount : parseAmount(amount);
+    if (value === null) {
+      return res.status(400).json({ error: 'Nominal harus angka lebih dari 0' });
+    }
+    if (dueDate !== undefined && dueDate && !isValidDate(dueDate)) {
+      return res.status(400).json({ error: 'Tanggal jatuh tempo harus format YYYY-MM-DD' });
+    }
+    const newType = type === undefined ? existing.type : type;
+    if (!['lend', 'borrow'].includes(newType)) {
+      return res.status(400).json({ error: 'type harus lend (piutang) atau borrow (utang)' });
+    }
+    await db
+      .prepare(
+        'UPDATE debts SET name = ?, amount = ?, type = ?, contact = ?, due_date = ?, note = ?, settled = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL'
+      )
+      .run(
+        String(name ?? existing.name).trim(),
+        value,
+        newType,
+        contact === undefined ? existing.contact : contact || '',
+        dueDate === undefined ? existing.due_date : dueDate || null,
+        note === undefined ? existing.note : note || '',
+        settled === undefined ? existing.settled : settled ? 1 : 0,
+        req.params.id,
+        userId
+      );
+    const row = await db
+      .prepare('SELECT * FROM debts WHERE id = ?')
+      .get(Number(req.params.id));
+    res.json(row);
+  })
+);
+
+// Hapus hutang/piutang (soft delete)
+app.delete(
+  '/api/debts/:id',
+  asyncHandler(async (req, res) => {
+    const result = await db
+      .prepare(
+        "UPDATE debts SET deleted_at = datetime('now', 'localtime') WHERE id = ? AND user_id = ? AND deleted_at IS NULL"
+      )
+      .run(req.params.id, req.userId);
+    if (Number(result.changes) === 0) {
+      return res.status(404).json({ error: 'Hutang/piutang tidak ditemukan' });
+    }
+    res.json({ ok: true });
+  })
+);
+
+// Daftar aset & liabilitas (Net Worth)
+app.get(
+  '/api/assets',
+  asyncHandler(async (req, res) => {
+    const rows = await db
+      .prepare('SELECT * FROM assets WHERE deleted_at IS NULL AND user_id = ? ORDER BY type, id')
+      .all(req.userId);
+    res.json(rows);
+  })
+);
+
+// Tambah aset/liabilitas
+app.post(
+  '/api/assets',
+  asyncHandler(async (req, res) => {
+    const userId = req.userId;
+    const { name, value, type } = req.body ?? {};
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: 'Nama aset/liabilitas wajib diisi' });
+    }
+    if (!['asset', 'liability'].includes(type)) {
+      return res.status(400).json({ error: 'type harus asset atau liability' });
+    }
+    const v = Number(value);
+    if (!Number.isFinite(v) || v < 0) {
+      return res.status(400).json({ error: 'Nilai harus angka >= 0' });
+    }
+    const result = await db
+      .prepare('INSERT INTO assets (name, value, type, user_id) VALUES (?, ?, ?, ?)')
+      .run(String(name).trim(), v, type, userId);
+    const row = await db
+      .prepare('SELECT * FROM assets WHERE id = ?')
+      .get(Number(result.lastInsertRowid));
+    res.status(201).json(row);
+  })
+);
+
+// Perbarui aset/liabilitas
+app.put(
+  '/api/assets/:id',
+  asyncHandler(async (req, res) => {
+    const userId = req.userId;
+    const existing = await db
+      .prepare('SELECT * FROM assets WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
+      .get(req.params.id, userId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Aset/liabilitas tidak ditemukan' });
+    }
+    const { name, value, type } = req.body ?? {};
+    const newType = type === undefined ? existing.type : type;
+    if (!['asset', 'liability'].includes(newType)) {
+      return res.status(400).json({ error: 'type harus asset atau liability' });
+    }
+    const v = value === undefined ? existing.value : Number(value);
+    if (!Number.isFinite(v) || v < 0) {
+      return res.status(400).json({ error: 'Nilai harus angka >= 0' });
+    }
+    await db
+      .prepare(
+        'UPDATE assets SET name = ?, value = ?, type = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL'
+      )
+      .run(String(name ?? existing.name).trim(), v, newType, req.params.id, userId);
+    const row = await db
+      .prepare('SELECT * FROM assets WHERE id = ?')
+      .get(Number(req.params.id));
+    res.json(row);
+  })
+);
+
+// Hapus aset/liabilitas (soft delete)
+app.delete(
+  '/api/assets/:id',
+  asyncHandler(async (req, res) => {
+    const result = await db
+      .prepare(
+        "UPDATE assets SET deleted_at = datetime('now', 'localtime') WHERE id = ? AND user_id = ? AND deleted_at IS NULL"
+      )
+      .run(req.params.id, req.userId);
+    if (Number(result.changes) === 0) {
+      return res.status(404).json({ error: 'Aset/liabilitas tidak ditemukan' });
+    }
+    res.json({ ok: true });
+  })
+);
+
 // Hapus transaksi (soft delete → masuk recycle bin)
 app.delete(
   '/api/transactions/:id',
@@ -1546,6 +1748,12 @@ app.get(
       recurring: await db
         .prepare('SELECT * FROM recurring WHERE deleted_at IS NULL AND user_id = ? ORDER BY id')
         .all(userId),
+      debts: await db
+        .prepare('SELECT * FROM debts WHERE deleted_at IS NULL AND user_id = ? ORDER BY id')
+        .all(userId),
+      assets: await db
+        .prepare('SELECT * FROM assets WHERE deleted_at IS NULL AND user_id = ? ORDER BY id')
+        .all(userId),
     });
   })
 );
@@ -1573,11 +1781,15 @@ app.post(
       return res.status(400).json({ error: 'Format file backup tidak valid' });
     }
     const recurring = Array.isArray(d.recurring) ? d.recurring : [];
+    const debts = Array.isArray(d.debts) ? d.debts : [];
+    const assets = Array.isArray(d.assets) ? d.assets : [];
     const conflict =
       (await idConflict(userId, 'accounts', d.accounts)) ||
       (await idConflict(userId, 'transactions', d.transactions)) ||
       (await idConflict(userId, 'transfers', d.transfers)) ||
       (await idConflict(userId, 'recurring', recurring)) ||
+      (await idConflict(userId, 'debts', debts)) ||
+      (await idConflict(userId, 'assets', assets)) ||
       (await idConflict(userId, 'categories', d.categories));
     if (conflict) {
       return res.status(409).json({
@@ -1586,7 +1798,7 @@ app.post(
     }
     try {
       const stmts = [];
-      for (const t of ['transfers', 'transactions', 'recurring', 'category_budgets', 'categories', 'accounts', 'settings']) {
+      for (const t of ['debts', 'assets', 'transfers', 'transactions', 'recurring', 'category_budgets', 'categories', 'accounts', 'settings']) {
         stmts.push({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] });
       }
       const insAccount = {
@@ -1599,7 +1811,7 @@ app.post(
         });
       }
       const insTx = {
-        sql: 'INSERT INTO transactions (id, type, amount, category, description, date, account_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        sql: 'INSERT INTO transactions (id, type, amount, category, description, tags, date, account_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       };
       for (const t of d.transactions) {
         stmts.push({
@@ -1610,6 +1822,7 @@ app.post(
             Number(t.amount) || 0,
             t.category || '',
             t.description || '',
+            t.tags || '',
             t.date,
             t.account_id ?? null,
             userId,
@@ -1651,6 +1864,34 @@ app.post(
             r.active ? 1 : 0,
             userId,
           ],
+        });
+      }
+      const insDebt = {
+        sql: 'INSERT INTO debts (id, name, amount, type, contact, due_date, settled, note, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      };
+      for (const d2 of debts) {
+        stmts.push({
+          sql: insDebt.sql,
+          args: [
+            d2.id,
+            d2.name,
+            Number(d2.amount) || 0,
+            d2.type === 'borrow' ? 'borrow' : 'lend',
+            d2.contact || '',
+            d2.due_date ?? null,
+            d2.settled ? 1 : 0,
+            d2.note || '',
+            userId,
+          ],
+        });
+      }
+      const insAsset = {
+        sql: 'INSERT INTO assets (id, name, value, type, user_id) VALUES (?, ?, ?, ?, ?)',
+      };
+      for (const a of assets) {
+        stmts.push({
+          sql: insAsset.sql,
+          args: [a.id, a.name, Number(a.value) || 0, a.type === 'liability' ? 'liability' : 'asset', userId],
         });
       }
       const insCat = { sql: 'INSERT INTO categories (id, type, name, user_id) VALUES (?, ?, ?, ?)' };

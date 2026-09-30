@@ -57,6 +57,7 @@ const SCHEMA = [
     amount REAL NOT NULL,
     category TEXT,
     description TEXT,
+    tags TEXT,
     date TEXT NOT NULL,
     account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -120,6 +121,30 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_recurring_user ON recurring(user_id)`,
 
+  `CREATE TABLE IF NOT EXISTS debts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    amount REAL NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('lend', 'borrow')),
+    contact TEXT,
+    due_date TEXT,
+    settled INTEGER NOT NULL DEFAULT 0,
+    note TEXT,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    deleted_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_debts_user ON debts(user_id)`,
+
+  `CREATE TABLE IF NOT EXISTS assets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    value REAL NOT NULL DEFAULT 0,
+    type TEXT NOT NULL CHECK (type IN ('asset', 'liability')),
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    deleted_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_assets_user ON assets(user_id)`,
+
   `CREATE TABLE IF NOT EXISTS auth_tokens (
     token_hash TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -146,6 +171,14 @@ const SCHEMA = [
 
 for (const sql of SCHEMA) {
   await client.execute(sql);
+}
+
+// Migrasi ringan: tambah kolom tags untuk database yang dibuat sebelum fitur
+// tag ada. Dijalankan idempoten — galat "duplicate column" diabaikan.
+try {
+  await client.execute('ALTER TABLE transactions ADD COLUMN tags TEXT');
+} catch {
+  // Kolom sudah ada pada database baru.
 }
 
 // ---------------------------------------------------------------------------

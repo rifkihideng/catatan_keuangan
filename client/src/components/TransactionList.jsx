@@ -17,6 +17,7 @@ import TrashDialog from './TrashDialog';
 export default function TransactionList({
   transactions,
   categories = { income: [], expense: [] },
+  accounts = [],
   month,
   setMonth,
   from,
@@ -31,6 +32,8 @@ export default function TransactionList({
 }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
+  const [type, setType] = useState('');
+  const [account, setAccount] = useState('');
   const [sort, setSort] = useState('date-desc');
   const [pending, setPending] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -52,11 +55,18 @@ export default function TransactionList({
       list = list.filter(
         (t) =>
           (t.category || '').toLowerCase().includes(query) ||
-          (t.description || '').toLowerCase().includes(query)
+          (t.description || '').toLowerCase().includes(query) ||
+          (t.tags || '').toLowerCase().includes(query)
       );
     }
     if (category) {
       list = list.filter((t) => (t.category || '') === category);
+    }
+    if (type) {
+      list = list.filter((t) => t.type === type);
+    }
+    if (account) {
+      list = list.filter((t) => String(t.account_id ?? '') === account);
     }
     const dir = sort.endsWith('-desc') ? -1 : 1;
     const field = sort.startsWith('date')
@@ -81,7 +91,7 @@ export default function TransactionList({
       if (va > vb) return dir;
       return 0;
     });
-  }, [transactions, query, category, sort]);
+  }, [transactions, query, category, type, account, sort]);
 
   async function confirmDelete() {
     if (!pending) return;
@@ -151,6 +161,31 @@ export default function TransactionList({
             ))}
           </select>
           <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="input w-auto"
+            title="Filter tipe"
+            aria-label="Filter tipe transaksi"
+          >
+            <option value="">Semua tipe</option>
+            <option value="income">Pemasukan</option>
+            <option value="expense">Pengeluaran</option>
+          </select>
+          <select
+            value={account}
+            onChange={(e) => setAccount(e.target.value)}
+            className="input w-auto"
+            title="Filter rekening"
+            aria-label="Filter rekening"
+          >
+            <option value="">Semua rekening</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={String(a.id)}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+          <select
             value={sort}
             onChange={(e) => setSort(e.target.value)}
             className="input w-auto"
@@ -203,13 +238,15 @@ export default function TransactionList({
               title="Sampai tanggal"
               aria-label="Sampai tanggal"
             />
-            {(month || from || to || category || search) && (
+            {(month || from || to || category || type || account || search) && (
               <button
                 onClick={() => {
                   setMonth('');
                   setFrom('');
                   setTo('');
                   setCategory('');
+                  setType('');
+                  setAccount('');
                   setSearch('');
                 }}
                 className="rounded-xl border border-slate-300 px-2 py-1.5 text-sm text-slate-500 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
@@ -280,6 +317,18 @@ export default function TransactionList({
                     {t.account_name ? ` · ${t.account_name}` : ''}
                     {t.description ? ` · ${t.description}` : ''}
                   </p>
+                  {tagList(t.tags).length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {tagList(t.tags).map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -343,4 +392,11 @@ function formatDate(d) {
     month: 'short',
     year: 'numeric',
   });
+}
+
+function tagList(tags) {
+  return String(tags || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }

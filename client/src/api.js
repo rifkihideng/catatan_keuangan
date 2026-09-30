@@ -184,3 +184,25 @@ export const deleteTrashItem = (entity, id) =>
 export const emptyTrash = () => request('/trash', { method: 'DELETE' });
 
 export const getCategoryMonthlyReport = () => request('/reports/category-monthly');
+
+// --- Hutang-piutang ---
+export const getDebts = () => request('/debts');
+
+export const addDebt = (data) =>
+  request('/debts', { method: 'POST', body: JSON.stringify(data) });
+
+export const updateDebt = (id, data) =>
+  request(`/debts/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const deleteDebt = (id) => request(`/debts/${id}`, { method: 'DELETE' });
+
+// --- Aset & liabilitas (Net Worth) ---
+export const getAssets = () => request('/assets');
+
+export const addAsset = (data) =>
+  request('/assets', { method: 'POST', body: JSON.stringify(data) });
+
+export const updateAsset = (id, data) =>
+  request(`/assets/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const deleteAsset = (id) => request(`/assets/${id}`, { method: 'DELETE' });

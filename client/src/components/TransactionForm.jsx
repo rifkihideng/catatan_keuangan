@@ -20,6 +20,7 @@ export default function TransactionForm({
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
+  const [tags, setTags] = useState('');
   const [date, setDate] = useState(today);
   const [accountId, setAccountId] = useState('');
   const [error, setError] = useState('');
@@ -47,11 +48,13 @@ export default function TransactionForm({
       setAmount(String(editing.amount));
       setCategory(editing.category || '');
       setDescription(editing.description || '');
+      setTags(editing.tags || '');
       setDate(editing.date);
       setAccountId(editing.account_id ? String(editing.account_id) : '');
     } else {
       setAmount('');
       setDescription('');
+      setTags('');
       setAccountId('');
     }
   }, [editing]);
@@ -83,6 +86,7 @@ export default function TransactionForm({
         amount: value,
         category,
         description,
+        tags,
         date,
         accountId: accountId ? Number(accountId) : null,
       };
@@ -93,6 +97,7 @@ export default function TransactionForm({
       }
       setAmount('');
       setDescription('');
+      setTags('');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -253,6 +258,17 @@ export default function TransactionForm({
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="contoh: Makan siang"
+          className="input"
+        />
+      </div>
+
+      <div>
+        <label className="label">Tag (opsional)</label>
+        <input
+          type="text"
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+          placeholder="contoh: liburan, keluarga (pisahkan dengan koma)"
           className="input"
         />
       </div>
